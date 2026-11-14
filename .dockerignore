@@ -1,0 +1,14 @@
+Library
+Temp
+Logs
+obj
+UserSettings
+Assets
+Packages
+ProjectSettings
+*.csproj
+*.slnx
+.vscode
+**/__pycache__
+**/.pytest_cache
+.venv

@@ -1,0 +1,10 @@
+# 開発・テスト兼 CLI 実行イメージ(ソースは bind mount、依存だけ焼き込み)
+# 注意: Docker 20.10 は古く、bookworm(glibc>=2.34) の clone3 を seccomp が拒否してスレッドが作れない。bullseye を使う
+FROM python:3.12-slim-bullseye
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/work/server:/work/cli
+WORKDIR /work
+COPY server/requirements.txt server/requirements-dev.txt /tmp/server/
+COPY cli/requirements.txt /tmp/cli/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/server/requirements-dev.txt -r /tmp/cli/requirements.txt
+CMD ["sleep", "infinity"]

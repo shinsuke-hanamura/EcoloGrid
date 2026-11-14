@@ -1,0 +1,29 @@
+version: "3.7"
+
+# docker-compose 1.22 互換(profiles 等は使わない)
+services:
+  # ゲームサーバ(権威)。ソースを mount して --reload で開発もできる
+  server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.server
+    image: ecologrid-server
+    container_name: ecologrid-server
+    ports:
+      - "${ECOLOGRID_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  # 開発・テスト・CLI 実行用。 docker-compose run --rm dev pytest 等
+  dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    image: ecologrid-dev
+    container_name: ecologrid-dev
+    working_dir: /work
+    volumes:
+      - .:/work
+    environment:
+      ECOLOGRID_SERVER: http://server:8000
+    depends_on:
+      - server
