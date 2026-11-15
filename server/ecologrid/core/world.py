@@ -212,6 +212,15 @@ class World:
             if rec.alive and rec.entity_id not in self.regions[rec.region].entities:
                 rec.entity_id = None   # 死亡(越境中の Entity は _deliver で登録済み)
 
+    GLOBAL_EVENTS = ("tick_interval_changed",)       # 知覚の範囲に関係なく、全プレイヤーに届くイベント
+
+    def emit_global(self, type_: str, **data) -> None:
+        """世界全体のイベント(全 Region・全プレイヤー向け)。tick の外から発行できる。"""
+        ev = {"type": type_, "regions": sorted(self.regions), **data}
+        ev["seq"], ev["tick"] = self._next_seq, self.tick_no
+        self._next_seq += 1
+        self._events.append(ev)
+
     def _collect_events(self) -> None:
         for rid in sorted(self.regions):
             r = self.regions[rid]
@@ -270,9 +279,10 @@ class World:
 
     def visible_events(self, pid: str, evs: List[dict]) -> List[dict]:
         """イベントのうち、本人に関するものと、有効な知覚の範囲内のものだけ。他の個体の内部状態は、公開項目だけにする。"""
+        glob = self.GLOBAL_EVENTS
         win = self.player_window(pid)
         if win is None:
-            return [e for e in evs if e.get("player_id") == pid]
+            return [e for e in evs if e.get("player_id") == pid or e["type"] in glob]
         ent, _, c, r = win
 
         def inside(pos) -> bool:
@@ -281,6 +291,9 @@ class World:
         out = []
         for ev in evs:
             t = ev["type"]
+            if t in glob:
+                out.append(ev)
+                continue
             if ev.get("player_id") == pid or ev.get("id") == ent.entity_id or (
                     t == "entity_spawned" and ev["entity"].get("player_id") == pid):
                 out.append(ev)
@@ -343,8 +356,15 @@ class World:
         """seq > since のイベントと最新 seq。古すぎれば EventsExpired。"""
         if self._events and since < self._events[0]["seq"] - 1:
             raise EventsExpired(since)
-        out = [e for e in self._events if e["seq"] > since
-               and (region is None or tuple(region) in [tuple(x) for x in e["regions"]])]
+        out = []
+        for e in reversed(self._events):          # seq は昇順。新しい側から、since に届くまでだけ見る(全件は走査しない)
+            if e["seq"] <= since:
+                break
+            out.append(e)
+        out.reverse()
+        if region is not None:
+            rid = tuple(region)
+            out = [e for e in out if rid in [tuple(x) for x in e["regions"]]]
         return out, self.last_seq
 
     def snapshot(self, region: Optional[RegionId] = None) -> dict:

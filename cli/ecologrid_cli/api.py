@@ -71,6 +71,10 @@ class ApiClient:
         """名前を変更。使用中なら ApiError(409, code=name_taken)。"""
         return self._req("PUT", f"/players/{self.player_id}/name", json={"name": name})
 
+    def set_tick_interval(self, ms: int) -> dict:
+        """進行の速さ(1 tick の実時間 ms、0〜1000。0 = 最速)を変更。全プレイヤーに影響する。422 = 範囲外、429 = 変更が早すぎる。"""
+        return self._req("PUT", "/world/tick-interval", json={"tick_interval_ms": ms})
+
     def view(self) -> dict:
         """自分のセル + 有効な知覚の範囲までの、現在の地形・個体(範囲の外は返らない)。"""
         return self._req("GET", f"/players/{self.player_id}/view")

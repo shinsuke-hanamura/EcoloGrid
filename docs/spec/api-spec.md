@@ -15,13 +15,14 @@
 ### 2.1 参加・状態・コマンド
 | メソッド/パス | 内容 |
 |---|---|
-| `GET /healthz` | 生存確認(tick・人数・`tick_errors`) |
+| `GET /healthz` | 生存確認(tick・人数・`tick_errors`・**現在の `tick_interval_ms`**) |
 | `GET /config` | システム設定値(`world`・`tick`・`limits`・`species`・`command_types`・`directions`・`cell_kinds`)。参加前に取得でき、クライアントは起動時に 1 回キャッシュする。`world_id` が変わったらサーバの再起動とみなす |
 | `POST /players` | 参加。本文 `{name}`。`player_id` と `token` を返す。**名前が使用中なら 409 `{code: name_taken}`**。満員は 503 |
 | `GET /players/{id}` | 自分の状態(生死・位置・`name`・Hydration/Energy/Health など) |
 | `PUT /players/{id}/name` | **名前の変更**。本文 `{name}`。使用中なら 409 `name_taken`。他のプレイヤーには `player_renamed` イベントで届く |
 | `DELETE /players/{id}` | 退出 |
 | `POST /players/{id}/commands` | `move`(`dir`: n/s/e/w)・`eat`・`drink`・`rest`・`wait`・`respawn`。`command_id` で冪等(重複は `duplicate`)。キュー満杯は 429、死亡中の `respawn` 以外は 409 |
+| `PUT /world/tick-interval` | **進行の速さ**(1 tick の実時間 ms)を稼働中に変更。本文 `{tick_interval_ms}`(整数 0〜1000。0 = 待たずに最速)。応答 `{tick_interval_ms, previous}`。**全プレイヤーのゲームが変わる**。範囲外は 422、全プレイヤーを通じて 1 秒に 1 回まで(429 `tick_interval_rate_limited`、`Retry-After`)、権限がなければ 403。変更は全員に `tick_interval_changed` で通知 |
 | `GET /world/regions` | Region の一覧(プレイヤー認証) |
 
 ### 2.2 PC の知覚: view と events(知覚の範囲の内側だけ)
@@ -51,7 +52,7 @@
 | `GET /admin/action-cache` / `POST /admin/action-cache/clear` | 周期アクションの解決(アクション計画)のキャッシュの状態/破棄(`spec.md` §10) |
 
 ## 3. イベント
-共通項目: `seq`・`tick`・`type`・`regions`。PC には、本人に関するものと範囲内のものだけが届く。主な種別: `entity_spawned`・`entity_removed`(`reason`: death/ate/left…)・`entity_moved`・`stats_changed`・`fell_asleep`・`woke_up`・`fainted`・`rest_started`/`rest_ended`・`player_died`・`player_renamed`・`command_rejected`・`reproduced` など。個体に関する項目には `pos`・`species` が付く。
+共通項目: `seq`・`tick`・`type`・`regions`。PC には、本人に関するものと範囲内のものだけが届く。主な種別: `entity_spawned`・`entity_removed`(`reason`: death/ate/left…)・`entity_moved`・`stats_changed`・`fell_asleep`・`woke_up`・`fainted`・`rest_started`/`rest_ended`・`player_died`・`player_renamed`・`tick_interval_changed`(**全員に届く**。`player_id`・`name`・`previous`・`tick_interval_ms`)・`command_rejected`・`reproduced` など。個体に関する項目には `pos`・`species` が付く。
 
 ## 4. 互換性
 - 世界全体の `snapshot`・`events` は管理者専用になった(2026-11-10、plan 19)。PC は view/events を使う

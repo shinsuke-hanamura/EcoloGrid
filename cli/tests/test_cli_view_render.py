@@ -57,7 +57,7 @@ def test_render_centers_on_me_and_priority():
     v.load(snap([ent("me", "Player", 10, 10, hydration=50, energy=50, health=50, player_id="pid"),
                  ent("p2", "Player", 11, 10, player_id="x"),
                  ent("f", "Fox", 9, 10), ent("w", "Wheat", 9, 10), ent("r", "Rabbit", 10, 11)], rows))
-    out = render(v, cols=40, rows=24, name="tester")
+    out = render(v, cols=90, rows=24, name="tester")
     lines = out.split("\n")
     assert "pos=10,10" in lines[0]
     mapl = [l for l in lines if "@" in l]
@@ -84,7 +84,7 @@ def test_time_label_and_toggle():
     assert v.time_label() == "Day 4 06:00:00 (earth)"
     assert v.toggle_time_format() == "tick" and v.time_label() == "Tick 259,200"
     assert v.toggle_time_format() == "clock" and v.time_label() == "Day 4 06:00:00 (earth)"
-    out = render(v, cols=60, rows=24, name="n")
+    out = render(v, cols=100, rows=24, name="n")
     assert "Day 4 06:00:00 (earth)" in out.split("\n")[0] and "t:time/tick" in out
     v.toggle_time_format()
     assert "Tick 259,200" in render(v, cols=60, rows=24, name="n").split("\n")[0]
@@ -105,7 +105,7 @@ def test_vitals_state_events_and_status_bar():
         ent("r1", "Rabbit", 6, 5, state="awake"), ent("f1", "Fox", 7, 5, state="sleeping")], temp=31.0))
     assert v.vitals == {"stamina": 42, "wakefulness": 50, "state": "awake", "resting": False}
     assert v.temperature() == 31.0
-    out = render(v, cols=60, rows=24)
+    out = render(v, cols=80, rows=24)
     assert "31C" in out.split("\n")[0]
     assert "Stamina" in out and "Wakeful" in out and "State Awake" in out
     assert "z:rest" in out
@@ -116,9 +116,9 @@ def test_vitals_state_events_and_status_bar():
     assert cell_glyph(v, 6, 5) == "R" and cell_glyph(v, 7, 5) == "f"
     # 自分の状態イベント
     v.apply([{"type": "rest_started", "id": "me"}])
-    assert v.vitals["resting"] and "State Resting" in render(v, cols=60, rows=24) and v.log[-1] == "You are resting."
+    assert v.vitals["resting"] and "State Resting" in render(v, cols=80, rows=24) and v.log[-1] == "You are resting."
     v.apply([{"type": "rest_ended", "id": "me"}, {"type": "fell_asleep", "id": "me"}])
-    assert v.vitals["state"] == "sleeping" and "State Sleeping" in render(v, cols=60, rows=24)
+    assert v.vitals["state"] == "sleeping" and "State Sleeping" in render(v, cols=80, rows=24)
     v.apply([{"type": "fainted", "id": "me"}])
     assert v.vitals["state"] == "unconscious" and v.log[-1] == "You fainted."
     v.apply([{"type": "woke_up", "id": "me"}])
@@ -146,7 +146,7 @@ def test_load_view_keeps_only_the_window_and_renders_only_it():
     assert v.view_r == 2 and v.me_pos == (10, 10) and v.alive and v.stats["hydration"] == 50
     assert v.kind(10, 10) == "." and v.kind(13, 10) == " " and v.kind(10, 8) == "." and v.kind(10, 7) == " "
     assert v.in_view(12, 12) and not v.in_view(13, 10)
-    out = render(v, cols=40, rows=24)
+    out = render(v, cols=80, rows=24)
     map_lines = out.split("\n")[1:1 + 13]
     painted = [ln for ln in map_lines if ln.strip()]
     assert len(painted) == 5 and all(len(ln.replace(" ", "")) == 5 for ln in painted)        # 5×5 の窓だけ描く
@@ -158,7 +158,7 @@ def test_range_zero_renders_only_own_cell():
     v = WorldView()
     v.player_id = "pid"
     v.load_view(_view_payload(0, entities=[ent("g1", "Grass", 10, 10)]), region_size=32)
-    out = render(v, cols=40, rows=24)
+    out = render(v, cols=80, rows=24)
     painted = [ln for ln in out.split("\n")[1:14] if ln.strip()]
     assert painted == [ln for ln in painted if ln.strip() == "@"] and len(painted) == 1        # 自分のセルだけ
     assert "Range 0" in out
@@ -203,3 +203,96 @@ def test_player_glyph_is_first_char_of_name_and_self_is_highlighted():
     assert "人" in render(v, cols=60, rows=24) and "\x1b[30;47m人\x1b[0m" in render(v, cols=60, rows=24, color=True)
     v.apply([{"type": "player_renamed", "player_id": "x", "id": "p2", "name": "Ken", "pos": [11, 10]}])
     assert "K" in render(v, cols=60, rows=24)
+
+
+def test_legend_shows_the_current_tick_interval():
+    rows = ["." * 32 for _ in range(32)]
+    v = WorldView()
+    v.player_id, v.me_id, v.my_name = "pid", "me", "Zed"
+    v.load(snap([ent("me", "Player", 10, 10, hydration=50, energy=50, health=50, player_id="pid")], rows))
+    v.toggle_help()
+    v.tick_interval_ms = 50
+    assert "Tick: 50 ms (x1)" in render(v, cols=100, rows=32)
+    v.apply([{"type": "tick_interval_changed", "player_id": "x", "name": "bob", "previous": 50, "tick_interval_ms": 0}])
+    out = render(v, cols=100, rows=32)
+    assert "Tick: 0 ms (max speed)" in out and v.log[-1] == "bob changed the tick interval: 50 -> 0 ms (max speed)"
+    v.tick_interval_ms = 10
+    assert "10 ms (x5)" in render(v, cols=100, rows=32)
+    v.tick_interval_ms = 1000
+    assert "x0.05" in render(v, cols=100, rows=32)
+
+
+def test_config_panel_is_shown_beside_the_map_only_when_there_is_room():
+    from ecologrid_cli import panel
+    rows = ["." * 32 for _ in range(32)]
+    v = WorldView()
+    v.player_id, v.me_id, v.my_name = "pid", "me", "Zed"
+    v.load(snap([ent("me", "Player", 10, 10, hydration=50, energy=50, health=50, player_id="pid")], rows))
+    v.tick_interval_ms = 50
+    panel.open_config(v)
+    wide = render(v, cols=100, rows=32)
+    assert "Config (Esc/c: close)" in wide and "1) Name : Zed" in wide
+    assert all(len(l) <= 100 for l in wide.split("\n"))                 # 端末の幅を超えない
+    assert "Config" not in render(v, cols=60, rows=32)                    # 幅が足りないときは、パネルを出さない
+    v.panel_mode, v.panel_buf = "name", "Ken"
+    assert "Config > Name" in render(v, cols=100, rows=32) and "> Ken_" in render(v, cols=100, rows=32)
+    v.panel_mode, v.panel_buf, v.panel_msg = "tick", "10", "Enter an integer from 0 to 1000, or 'max'."
+    out = render(v, cols=100, rows=32)
+    assert "Config > Tick interval" in out and "> 10_" in out and "Enter an integer" in out
+    panel.close(v)
+    v.toggle_help()
+    assert "Help: Legend" in render(v, cols=100, rows=32)
+
+
+import pytest
+
+
+# --- 端末の大きさ(幅・高さ)を超えない(TODO C-1。折り返し・スクロールで、行がずれるのを防ぐ) ---
+import re as _re
+import unicodedata as _ud
+
+_ANSI = _re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _disp_width(s):
+    return sum(2 if _ud.east_asian_width(c) in "WF" else 1 for c in _ANSI.sub("", s))
+
+
+def _layout_view(page, log=4, alive=True):
+    from ecologrid_cli import panel
+    rows = ["." * 64 for _ in range(64)]
+    v = WorldView()
+    v.player_id, v.me_id, v.my_name = "pid", "me", "Zed人"
+    v.load(snap([ent("me", "Player", 30, 30, hydration=50, energy=50, health=50, player_id="pid")], rows))
+    v.tick_interval_ms = 50
+    for i in range(log):
+        v.log.append(f"message number {i} " + "x" * 40)
+    v.alive = alive
+    if page == "help":
+        v.toggle_help()
+    elif page in ("config", "name", "tick"):
+        panel.open_config(v)
+        v.panel_mode = page
+        v.panel_buf, v.panel_msg = "1234", "Enter an integer from 0 to 1000, or 'max'. " * 2
+    return v
+
+
+@pytest.mark.parametrize("page", [None, "help", "config", "name", "tick"])
+@pytest.mark.parametrize("color", [False, True])
+def test_frame_fits_the_terminal_for_any_size_and_page(page, color):
+    for cols in list(range(40, 131, 3)) + [99, 100, 101, 102, 110, 111, 150, 160, 200, 240]:   # 幅の半分が偶数・奇数の両方を含む
+        for rows in (16, 24, 25, 30, 31, 32, 41):
+            for alive in (True, False):
+                out = render(_layout_view(page, alive=alive), cols=cols, rows=rows, color=color).split("\n")
+                assert len(out) <= rows, (cols, rows, page, len(out))
+                assert max(_disp_width(l) for l in out) <= cols, (cols, rows, page)
+
+
+def test_map_keeps_the_player_cell_at_the_center_and_odd_size():
+    for cols in (80, 100, 101, 120, 160):
+        for rows in (24, 30, 32):
+            out = render(_layout_view(None), cols=cols, rows=rows).split("\n")
+            row = [l for l in out[1:] if "Z" in l]               # 自分(名前の 1 文字目)は、地図に 1 つだけ
+            assert len(row) == 1
+            map_w = (cols // 2) if (cols // 2) % 2 else (cols // 2) - 1      # 地図の幅(セル)は奇数で、幅を超えない
+            assert row[0].index("Z") // 2 == map_w // 2          # 中央のセル

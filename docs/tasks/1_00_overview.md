@@ -1,6 +1,6 @@
 # Ecologrid タスク一覧
 
-**ファイル名の規則**: 数字で始まる plan のファイルは、`docs/tasks/<issue>_<連番>_<名前>.md`。`<連番>`は作業順の番号で、issue とは無関係(作業順の番号が、issue の番号と取り違えられないように、issue の接頭辞を付ける)。数字で始まらないファイル(`TODO.md`)には、接頭辞を付けない。`<issue>`は関連する GitHub issue の番号(`1_` = issue #1、EcoloGrid の初期コミット)。**issue #1 で実装されていないもの**(未着手・plan のみ・縮小)は、`x_`(issue 未定)。実装したら、`1_` などに改名する。対象: `x_05`(Unity)、`x_06`(永続化)、`x_08`〜`x_11`(ボクセル化)、`x_12`(縮小)、`x_20`(強化学習の段階)。
+**ファイル名の規則**(1 タスク 1 issue。2026-11-15 に方針を変更): **issue を割り当てたタスク**は、`docs/tasks/<issue>_<名前>.md`(例: `2_tick_speed_control.md`。作業順の連番は付けない)。**issue が未定のタスク**は、これまでの名前のまま(`docs/tasks/<連番>_<名前>.md` または `x_<連番>_<名前>.md`)で、issue を割り当てたときに、`<issue>_<名前>.md` に順次改める。`1_<連番>_…` は、issue #1(初期コミット)でまとめて実装したもの(作業順の連番は、issue 番号とは無関係)。`x_<連番>_…` は、issue 未定で、issue #1 で実装していないもの(未着手・plan のみ・縮小。対象: `x_05`(Unity)、`x_06`(永続化)、`x_08`〜`x_11`(ボクセル化)、`x_12`(縮小)、`x_20`(強化学習の段階)、`x_22`(サイドパネルの整理))。数字で始まらないファイル(`TODO.md`)には、接頭辞を付けない。コミットメッセージのファイルは、`<issue>_commit_message_<名前>.md`。
 
 方針: サーバ権威型(Python/FastAPI)。詳細は `docs/spec/architecture.md`。
 
@@ -23,6 +23,7 @@
 | 18 | 1_18_diet_preference_absorption.md | 食べ物の嗜好と吸収性(個体ごと・種ごと) | **実装済み**(2026-11-10。結果は各 plan の末尾) |
 | 19 | 1_19_player_view_memory_api.md | PC の知覚の範囲だけを返す API(view)・記憶/地図/助言の API・CLI の対応 | **実装済み**(2026-11-10。結果は各 plan の末尾) |
 | 20 | x_20_rl_gate_stages.md | 強化学習の段階とゲート(測って判断) | plan のみ(ゲート 0 の後) |
+| issue 2 | 2_tick_speed_control.md | 進行速度(`tick_interval_ms`)の変更機能: プレイヤーが稼働中に変更・最速モード(0)・凡例の画面で表示(issue #2) | **実装済み**(2026-11-14。結果は plan の末尾) |
 | 12 | x_12_realtime_engine_spike.md | 処理の軽量化の追加策(縮小。基本部分は plan 13 で実装済み) | 縮小 |
 | 13 | 1_13_game_time_and_tick.md | tick 50 ms・時間の設定を tick 数に統一・移動速度・パラメータの tick 化・惑星と時計・植物の遅延評価・GC の制御 | **完了**(テスト 108 件。生態系のバランス崩れが判明: TODO G-2) |
 | 06 | x_06_phase2_persistence.md | Phase 2 永続化(Valkey) | 後回し |

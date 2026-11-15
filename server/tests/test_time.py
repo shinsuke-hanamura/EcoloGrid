@@ -57,7 +57,7 @@ def test_day_phase_and_other_planet_clock():
 
 def test_config_validation():
     assert validate_config(WorldConfig()) == []
-    for bad in (0, -1, 50.5, "50", True):
+    for bad in (-1, 1001, 50.5, "50", True):          # 0〜1000 の整数だけ(0 = 待たずに最速。plan 21)
         with pytest.raises(ValueError):
             validate_config(WorldConfig(tick_interval_ms=bad))
     assert any("recommended" in w for w in validate_config(WorldConfig(tick_interval_ms=500)))
@@ -65,7 +65,8 @@ def test_config_validation():
     with pytest.raises(ValueError):
         validate_config(WorldConfig(region_planets={(0, 0): "mars"}))
     with pytest.raises(ValueError):
-        World(WorldConfig(tick_interval_ms=0))
+        World(WorldConfig(tick_interval_ms=-1))
+    assert World(WorldConfig(tick_interval_ms=0)).cfg.tick_interval_ms == 0        # 最速
 
 
 def test_regions_have_planets():

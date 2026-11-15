@@ -79,6 +79,7 @@ class Health(BaseModel):
     game_time: GameTimeInfo
     players: int
     tick_errors: int
+    tick_interval_ms: int = Field(description="現在の 1 tick の長さ(実時間、ms)。0 = 待たずに最速。稼働中に変わる")
 
 
 class WorldConfigInfo(BaseModel):
@@ -91,7 +92,17 @@ class WorldConfigInfo(BaseModel):
 
 
 class TickInfo(BaseModel):
-    tick_interval_ms: int = Field(description="1 tick の長さ(実時間、ms)。サーバごとに調整。ゲームの進む速さを決める唯一の値")
+    tick_interval_ms: int = Field(description="**現在の** 1 tick の長さ(実時間、ms)。0 = 待たずに最速。稼働中に変わる(変更は `tick_interval_changed` イベント。現在値は /healthz でも分かる)。ゲームの進む速さを決める唯一の値")
+
+
+class TickIntervalRequest(BaseModel):
+    tick_interval_ms: int = Field(strict=True, ge=0, le=1000,
+                                  description="1 tick の長さ(実時間、ms)。整数の 0〜1000。0 = 待たずに最速")
+
+
+class TickIntervalResponse(BaseModel):
+    tick_interval_ms: int
+    previous: int
 
 
 class PlanetInfo(BaseModel):
@@ -147,6 +158,8 @@ class LimitsInfo(BaseModel):
     max_poll_wait_sec: float = Field(description="events の wait の上限(秒)")
     event_log_size: int = Field(description="サーバが保持するイベント件数(古い since は 410)")
     player_idle_timeout_sec: float = Field(description="API に触れない時間がこれを超えるとプレイヤーは退出")
+    tick_interval_ms_min: int = Field(description="tick_interval_ms の下限(0 = 待たずに最速)")
+    tick_interval_ms_max: int = Field(description="tick_interval_ms の上限(ms)")
 
 
 class SystemConfig(BaseModel):

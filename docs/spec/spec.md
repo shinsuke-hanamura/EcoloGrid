@@ -374,5 +374,5 @@ Core 内の順序は Entity → LivingBeing → Animal → Plant → Seed → �
 
 ## 17. クライアント・運用
 
-- **CLI**: 画面と操作は `../cli-how-to-play.md`。知覚の範囲だけを表示する（範囲の外は空白）。`h`（凡例）、`c`（名前の変更）、`t`（時間表記の切替）
+- **CLI**: 画面と操作は `../cli-how-to-play.md`。知覚の範囲だけを表示する（範囲の外は空白）。**サイドパネル**（マップの横の領域）に、`h`（Help: 凡例・現在の進行の速さ・キー）、`c`（Config: 名前の変更・進行の速さ（tick の間隔）の変更）を出す。`t`（時間表記の切替）
 - **運用**: 起動・環境変数・管理 API は `../../docker/README.md`。ヘッドレスのシミュレーションは `python -m ecologrid.tools.simulate`（`--no-recall`・`--memorise-all-steps` など）
