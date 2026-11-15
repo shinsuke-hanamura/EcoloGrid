@@ -10,12 +10,28 @@ STATE_MESSAGES = {"fell_asleep": "You fell asleep.", "woke_up": "You woke up.", 
 PRIORITY = ["Player", "Fox", "Rabbit", "Egg", "Wheat", "Grass", "Seed"]
 
 
+STANDARD_TICK_MS = 50
+
+
+def tick_label(ms: Optional[int]) -> str:
+    """tick の間隔の表示。0 は最速。例: `50 ms (x1)`・`0 ms (max speed)`・`10 ms (x5)`。"""
+    if ms is None:
+        return "-"
+    if ms == 0:
+        return "0 ms (max speed)"
+    return f"{ms} ms (x{STANDARD_TICK_MS / ms:.3g})"
+
+
 class WorldView:
     def __init__(self):
         self.region_size = 32
         self.tick = 0                       # 絶対 tick(世界の開始からのゲーム内の秒数)
         self.game_time: Optional[dict] = None   # サーバが返した、自分の居る Region の惑星の時計
+        self.tick_interval_ms: Optional[int] = None   # 現在の 1 tick の実時間(ms)。0 = 最速
         self.my_name = ""                   # 自分の名前(マップ上の表示は、その 1 文字目)
+        self.panel_mode = None              # サイドパネルの Config(None / "config" / "name" / "tick")。panel.py
+        self.panel_buf = ""
+        self.panel_msg = ""
         self.show_help = False              # h キーで、マップ横の凡例(文字の説明)を出す
         self.time_format = "clock"          # "clock"(Day 3 14:05:30)/ "tick"(Tick 259,200)
         self.rows: Dict[Tuple[int, int], List[str]] = {}          # Region -> 地形の行
@@ -207,6 +223,10 @@ class WorldView:
                 self._move(ev["id"], tuple(ev["to"]))
                 if ev["id"] == self.me_id:
                     self.window_dirty = True          # 自分が動いた → 範囲(窓)が動いたので、view を取り直す
+            elif t == "tick_interval_changed":      # 全員に届く(知覚の範囲に関係なく)
+                self.tick_interval_ms = ev["tick_interval_ms"]
+                self.log.append(f"{ev.get('name', '?')} changed the tick interval: "
+                                f"{ev.get('previous')} -> {tick_label(ev['tick_interval_ms'])}")
             elif t == "player_renamed":
                 if ev.get("player_id") == self.player_id:
                     self.my_name = ev["name"]

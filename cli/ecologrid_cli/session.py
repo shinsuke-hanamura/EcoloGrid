@@ -17,12 +17,15 @@ class Session:
 
     @property
     def tick_interval_ms(self) -> int:
+        """現在の 1 tick の実時間(ms)。稼働中に変わる(イベントと定期の突き合わせで更新)。"""
+        if self.view.tick_interval_ms is not None:
+            return self.view.tick_interval_ms
         return self.config.get("tick", {}).get("tick_interval_ms", 50)
 
     def step_seconds(self, species: str = "Player") -> float:
         """species が 1 歩進むのにかかる実時間(秒)= move_interval_ticks × 1 tick の長さ。"""
         n = self.config.get("species", {}).get(species, {}).get("move_interval_ticks", 5)
-        return max(1, n) * self.tick_interval_ms / 1000.0
+        return max(0.001, max(1, n) * self.tick_interval_ms / 1000.0)      # 最速(0 ms)でも、待ちに下限を設ける
 
     # --- 開始・終了 ---
     def start(self) -> None:
@@ -32,6 +35,7 @@ class Session:
         self.api.join(self.name[: self.config["limits"]["name_max_length"]])   # 名前が使用中なら ApiError(409 name_taken)
         self.view = WorldView()
         self.view.player_id = self.api.player_id
+        self.view.tick_interval_ms = self.config.get("tick", {}).get("tick_interval_ms")
         self._sync_state()
 
     def _sync_state(self) -> None:
@@ -131,8 +135,18 @@ class Session:
                 return "dead"
             raise
 
+    def change_tick_interval(self, ms: int) -> int:
+        """進行の速さを変更する(全プレイヤーに影響)。使えない値・早すぎる変更は ApiError(422・429)。戻り値は、前の値。"""
+        r = self._guard(lambda: self.api.set_tick_interval(ms))
+        self.view.tick_interval_ms = r["tick_interval_ms"]
+        return r["previous"]
+
     def refresh_status(self) -> None:
         """状態の突き合わせ(生死・体力・知覚の範囲のずれ防止)。view を取り直す。"""
+        try:
+            self.view.tick_interval_ms = self.api.health().get("tick_interval_ms", self.view.tick_interval_ms)
+        except Exception:
+            pass
         self.view.set_me(self._guard(self.api.status))
         if self.view.alive:
             self._reload_view()

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, R
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ecologrid.core.clock import TICKS_PER_HOUR, TICKS_PER_MINUTE, TICKS_PER_SECOND
+from ecologrid.core.config import TICK_INTERVAL_MAX_MS, TICK_INTERVAL_MIN_MS
 from ecologrid.core.grid import DIRS
 from ecologrid.core.messages import COMMAND_TYPES, Command
 from ecologrid.core.planets import PLANETS
@@ -18,7 +19,7 @@ from ecologrid.core.terrain import LAND, ROCK, WATER
 from ecologrid.core.world import EventsExpired
 
 from . import memory_views, schemas
-from .game import GameServer
+from .game import GameServer, TickIntervalError
 from .settings import Settings
 
 PREFIX = "/api/v1"
@@ -66,7 +67,8 @@ def require_admin(game: GameServer = Depends(get_game), x_admin_key: Optional[st
 @router.get("/healthz", response_model=schemas.Health)
 async def healthz(game: GameServer = Depends(get_game)):
     return {"status": "ok", "tick": game.world.absolute_tick, "game_time": game.game_time_for(),
-            "players": len(game.world.players), "tick_errors": game.tick_errors}
+            "players": len(game.world.players), "tick_errors": game.tick_errors,
+            "tick_interval_ms": game.tick_interval_ms}
 
 
 @router.get("/config", response_model=schemas.SystemConfig)
@@ -92,7 +94,8 @@ async def system_config(game: GameServer = Depends(get_game)):
         "limits": {"max_players": st.max_players, "name_max_length": schemas.NAME_MAX_LEN,
                    "command_queue_max": cfg.command_queue_max, "command_dedup_size": cfg.command_dedup_size,
                    "max_poll_wait_sec": st.max_poll_wait_sec, "event_log_size": cfg.event_log_size,
-                   "player_idle_timeout_sec": st.player_idle_timeout_sec},
+                   "player_idle_timeout_sec": st.player_idle_timeout_sec,
+                   "tick_interval_ms_min": TICK_INTERVAL_MIN_MS, "tick_interval_ms_max": TICK_INTERVAL_MAX_MS},
         "command_types": list(COMMAND_TYPES), "directions": sorted(DIRS),
         "cell_kinds": {LAND: "land", WATER: "water", ROCK: "rock"},
     }
@@ -169,6 +172,21 @@ async def post_command(player_id: str, body: schemas.CommandRequest,
     if not ok:
         raise HTTPException(422, reason)
     return {"status": "queued", "command_id": body.command_id}
+
+
+@router.put("/world/tick-interval", response_model=schemas.TickIntervalResponse)
+async def set_tick_interval(body: schemas.TickIntervalRequest, pid: str = Depends(current_player),
+                            game: GameServer = Depends(get_game)):
+    """進行の速さ(1 tick の実時間 ms)を、稼働中に変更する。**全プレイヤーのゲームが同じ割合で速く/遅くなる**。
+    0 = 待たずに最速。0〜1000 の整数。全プレイヤーを通じて 1 秒に 1 回まで(超えると 429)。
+    変更は、全員に `tick_interval_changed` イベントで通知される。権限は、今は全プレイヤー(将来は合意・管理者)。"""
+    try:
+        prev, new = game.set_tick_interval(pid, body.tick_interval_ms)
+    except TickIntervalError as e:
+        status = {"tick_interval_forbidden": 403, "tick_interval_rate_limited": 429}.get(e.code, 422)
+        headers = {"Retry-After": str(max(1, int(e.retry_after + 0.999)))} if status == 429 else None
+        raise HTTPException(status, {"code": e.code, "message": str(e)}, headers=headers)
+    return {"tick_interval_ms": new, "previous": prev}
 
 
 @router.get("/world/regions", response_model=schemas.RegionsResponse)

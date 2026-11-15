@@ -11,13 +11,16 @@ import time
 from typing import Optional
 
 from .render import render
+from . import panel
 from .api import ApiError
 from .session import Session
+from .view import tick_label
 
 KEYS = {"w": ("move", {"dir": "n"}), "s": ("move", {"dir": "s"}), "a": ("move", {"dir": "w"}),
         "d": ("move", {"dir": "e"}), "e": ("eat", {}), "r": ("drink", {}), "z": ("rest", {}), ".": ("wait", {}),
         " ": ("wait", {}), "x": ("respawn", {})}
-ARROWS = {"A": "w", "B": "s", "C": "d", "D": "a"}      # ESC [ A/B/C/D
+ARROWS = {"A": "UP", "B": "DOWN", "C": "RIGHT", "D": "LEFT"}      # ESC [ A/B/C/D
+ARROW_TO_MOVE = {"UP": "w", "DOWN": "s", "RIGHT": "d", "LEFT": "a"}
 
 
 CONFIG_KEY = "c"         # 設定画面(名前の変更)。マップ上のプレイヤーの表示は、名前の 1 文字目
@@ -37,7 +40,7 @@ def _name_error_text(e: ApiError, name: str) -> str:
     return str(e)
 
 
-def config_screen(session: Session, message: str = "", input_fn=input, out=print, joined: bool = True) -> bool:
+def rename_screen(session: Session, message: str = "", input_fn=input, out=print, joined: bool = True) -> bool:
     """名前の変更画面。使用中の名前は、再入力させる(入力のたびにサーバで重複チェック)。
 
     joined=False は起動時(まだ参加していない): 決まったら参加まで行う。空入力で中止(False)。
@@ -64,6 +67,59 @@ def config_screen(session: Session, message: str = "", input_fn=input, out=print
             message = _name_error_text(e, new)
 
 
+def _tick_error_text(e: ApiError) -> str:
+    if e.status == 429:
+        return "Changed too recently (the interval can be changed once per second). Try again in a second."
+    if e.status == 403:
+        return "You are not allowed to change the tick interval."
+    if e.status == 422:
+        return "The interval must be an integer from 0 to 1000 (0 = max speed)."
+    return str(e)
+
+
+def tick_screen(session: Session, message: str = "", input_fn=input, out=print) -> bool:
+    """進行の速さ(1 tick の実時間 ms)の変更画面。全プレイヤーのゲームが同じ割合で速く/遅くなる。0〜1000、0 または max = 最速。"""
+    lim = session.config.get("limits", {})
+    lo, hi = lim.get("tick_interval_ms_min", 0), lim.get("tick_interval_ms_max", 1000)
+    while True:
+        out("\n=== Config: tick interval (game speed) ===")
+        out(f"Current: {tick_label(session.tick_interval_ms)}   (standard: 50 ms)")
+        out(f"Range: {lo} to {hi} ms. 0 (or 'max') = no waiting, the fastest. This changes the speed for ALL players.")
+        if message:
+            out(message)
+        raw = input_fn("New interval in ms (Enter = cancel): ").strip().lower()
+        if not raw:
+            return False
+        if raw == "max":
+            raw = "0"
+        if not raw.isdigit() or not lo <= int(raw) <= hi:
+            message = f"Enter an integer from {lo} to {hi}, or 'max'."
+            continue
+        try:
+            session.change_tick_interval(int(raw))
+            out(f"Tick interval set: {tick_label(session.tick_interval_ms)}")
+            return True
+        except ApiError as e:
+            message = _tick_error_text(e)
+
+
+def config_screen(session: Session, input_fn=input, out=print) -> bool:
+    """設定画面(c キー): 項目を選ぶ。1 = 名前、2 = 進行の速さ(tick の間隔)。空入力で中止。"""
+    while True:
+        out("\n=== Config ===")
+        out(f"1) Player name    : {session.name}")
+        out(f"2) Tick interval  : {tick_label(session.tick_interval_ms)}")
+        choice = input_fn("Select 1-2 (Enter = close): ").strip()
+        if not choice:
+            return False
+        if choice == "1":
+            rename_screen(session, input_fn=input_fn, out=out)
+        elif choice == "2":
+            tick_screen(session, input_fn=input_fn, out=out)
+        else:
+            out("Enter 1 or 2.")
+
+
 def start_interactive(session: Session, input_fn=input, out=print) -> bool:
     """参加。名前が使用中なら、名前の変更画面で再設定させる。中止したら False。"""
     try:
@@ -72,7 +128,7 @@ def start_interactive(session: Session, input_fn=input, out=print) -> bool:
     except ApiError as e:
         if e.code != "name_taken":
             raise
-        return config_screen(session, _name_error_text(e, session.name), input_fn, out, joined=False)
+        return rename_screen(session, _name_error_text(e, session.name), input_fn, out, joined=False)
 
 
 def run_script(session: Session, script: str, step_wait: float = 0.3, sleep=time.sleep) -> None:
@@ -98,18 +154,28 @@ def frame(session: Session, cols: int, rows: int, color: bool) -> str:
 
 
 def _read_key(fd: int, timeout: float) -> Optional[str]:
+    """1 キー。名前つきのキー("ESC"・"ENTER"・"BACKSPACE"・"UP"・"DOWN"・"LEFT"・"RIGHT")か、UTF-8 の 1 文字。"""
     r, _, _ = select.select([fd], [], [], timeout)
     if not r:
         return None
-    ch = os.read(fd, 1).decode(errors="ignore")
-    if ch == "\x1b":
+    b = os.read(fd, 1)
+    if b == b"\x1b":
         r, _, _ = select.select([fd], [], [], 0.01)
-        if r:
-            seq = os.read(fd, 2).decode(errors="ignore")
-            if len(seq) == 2 and seq[0] == "[":
-                return ARROWS.get(seq[1])
+        if not r:
+            return "ESC"
+        seq = os.read(fd, 2).decode(errors="ignore")
+        if len(seq) == 2 and seq[0] == "[":
+            return ARROWS.get(seq[1])
         return None
-    return ch
+    if b in (b"\r", b"\n"):
+        return "ENTER"
+    if b in (b"\x7f", b"\x08"):
+        return "BACKSPACE"
+    lead = b[0]
+    n = 4 if lead >= 0xF0 else 3 if lead >= 0xE0 else 2 if lead >= 0xC0 else 1
+    if n > 1:
+        b += os.read(fd, n - 1)
+    return b.decode(errors="ignore") or None
 
 
 def play(session: Session, color: bool = True) -> None:
@@ -141,6 +207,14 @@ def play(session: Session, color: bool = True) -> None:
         last_status = 0.0
         while not stop.is_set():
             k = _read_key(fd, 0.1)
+            if panel.captures_input(session.view):     # サイドパネルの Config 中は、キーをパネルが受け取る
+                if k == "\x03":
+                    break
+                if k is not None:
+                    panel.handle_key(session.view, session, k)
+                    dirty.set()
+                k = None
+            k = ARROW_TO_MOVE.get(k, k) if k else k
             if k == "q" or k == "\x03":
                 break
             if k == TOGGLE_TIME_KEY:
@@ -149,7 +223,10 @@ def play(session: Session, color: bool = True) -> None:
             if k == HELP_KEY:
                 session.view.toggle_help()
                 dirty.set()
-            if k == CONFIG_KEY:                       # 通常の入力モードに戻して、名前の変更画面を出す
+            if k == CONFIG_KEY and shutil.get_terminal_size((100, 32)).columns >= 40 + panel.PANEL_W:
+                panel.open_config(session.view)       # サイドパネルに Config を出す
+                dirty.set()
+            elif k == CONFIG_KEY:                     # 端末が狭い: 通常の入力モードに戻して、設定の画面を出す(従来の方式)
                 termios.tcsetattr(fd, termios.TCSADRAIN, old)
                 sys.stdout.write("\x1b[?25h\x1b[2J\x1b[H")
                 sys.stdout.flush()

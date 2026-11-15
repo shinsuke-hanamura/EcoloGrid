@@ -38,6 +38,17 @@ class WorldConfig:
         return get_planet(self.region_planets.get(tuple(rid), DEFAULT_PLANET))
 
 
+TICK_INTERVAL_MIN_MS = 0        # 0 = 待たずに最速(シミュレーションモード)
+TICK_INTERVAL_MAX_MS = 1000
+
+
+def check_tick_interval(v) -> str:
+    """tick_interval_ms の検査。問題なければ空文字、あればエラーの説明。整数の 0〜1000(bool・小数は不可)。"""
+    if isinstance(v, bool) or not isinstance(v, int) or not TICK_INTERVAL_MIN_MS <= v <= TICK_INTERVAL_MAX_MS:
+        return f"tick_interval_ms must be an integer in {TICK_INTERVAL_MIN_MS}..{TICK_INTERVAL_MAX_MS}: {v!r}"
+    return ""
+
+
 def validate_config(cfg: WorldConfig) -> List[str]:
     """起動時の検証。不正な値は ValueError、推奨を外れる値は警告(文字列のリスト)を返す。"""
     from .species import SPECIES
@@ -51,9 +62,10 @@ def validate_config(cfg: WorldConfig) -> List[str]:
     if cfg.region_size < 2 * max_vision:
         warnings.append(f"region_size={cfg.region_size} is smaller than twice the largest vision ({max_vision}): "
                         "animals see only inside their own Region, so their view is clipped at Region edges")
-    if isinstance(cfg.tick_interval_ms, bool) or not isinstance(cfg.tick_interval_ms, int) or cfg.tick_interval_ms <= 0:
-        raise ValueError(f"tick_interval_ms must be a positive integer: {cfg.tick_interval_ms!r}")
-    if not 20 <= cfg.tick_interval_ms <= 200:
+    err = check_tick_interval(cfg.tick_interval_ms)
+    if err:
+        raise ValueError(err)
+    if cfg.tick_interval_ms != 0 and not 20 <= cfg.tick_interval_ms <= 200:      # 0 = 待たずに最速(警告なし)
         warnings.append(f"tick_interval_ms={cfg.tick_interval_ms} is outside the recommended range 20-200")
     for rid, pid in cfg.region_planets.items():
         if pid not in PLANETS:

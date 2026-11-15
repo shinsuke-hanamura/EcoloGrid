@@ -276,14 +276,14 @@ def test_window_follows_the_player_when_moving(env):
 
 def test_config_screen_asks_again_when_name_is_taken(env):
     from ecologrid_cli.api import ApiClient
-    from ecologrid_cli.play import config_screen, start_interactive
+    from ecologrid_cli.play import rename_screen, start_interactive
     from ecologrid_cli.session import Session
     s, game, c = env
     other = Session(ApiClient(http=c), "bob")
     other.start()
     answers = iter(["bob", "carol"])                      # 使用中 → 再入力
     out = []
-    assert config_screen(s, input_fn=lambda _: next(answers), out=out.append) is True
+    assert rename_screen(s, input_fn=lambda _: next(answers), out=out.append) is True
     assert any("already used" in str(l) for l in out)
     assert s.name == "carol" and game.world.players[s.api.player_id].name == "carol"
     # 起動時に使用中なら、名前の変更画面で再設定させる(再設定でも重複チェック)
@@ -295,3 +295,116 @@ def test_config_screen_asks_again_when_name_is_taken(env):
     # 空入力で中止
     dup2 = Session(ApiClient(http=c), "dave")
     assert start_interactive(dup2, input_fn=lambda _: "", out=lambda *_: None) is False
+
+
+# --- 進行の速さ(tick_interval_ms)の変更(plan 21) ---
+def test_session_changes_tick_interval_and_other_players_get_the_event(env):
+    from ecologrid_cli.api import ApiClient
+    from ecologrid_cli.session import Session
+    s, game, c = env
+    other = Session(ApiClient(http=c), "bob")
+    other.start()
+    assert s.tick_interval_ms == 50 and other.tick_interval_ms == 50
+    assert s.change_tick_interval(0) == 50                       # 戻り値は前の値
+    assert s.tick_interval_ms == 0 and game.tick_interval_ms == 0
+    game.step()
+    other.poll(0)                                                # 別のプレイヤーにも、イベントで届く
+    assert other.tick_interval_ms == 0
+    assert any("changed the tick interval" in m and "max speed" in m for m in other.view.log)
+    assert other.step_seconds("Player") >= 0.001                 # 最速でも、待ちに下限がある
+    other.refresh_status()
+    assert other.tick_interval_ms == 0                           # 定期の突き合わせ(/healthz)でも同じ値
+
+
+def test_tick_screen_validates_input_and_handles_server_errors(env):
+    from ecologrid_cli.play import config_screen, tick_screen
+    s, game, c = env
+    out = []
+    answers = iter(["abc", "1001", "-5", "max"])                 # 範囲外・数字でない → 再入力 → max = 0
+    assert tick_screen(s, input_fn=lambda _: next(answers), out=out.append) is True
+    assert s.tick_interval_ms == 0 and game.tick_interval_ms == 0
+    assert sum("Enter an integer from 0 to 1000" in str(l) for l in out) == 3
+    # 変更が早すぎる(429)→ メッセージを出して再入力 → 解除後に成功
+    out = []
+    seq = iter(["20", "20"])
+    def ask(_):
+        v = next(seq)
+        if v == "20" and any("once per second" in str(l) for l in out):
+            game._tick_change_at = -1e9
+        return v
+    assert tick_screen(s, input_fn=ask, out=out.append) is True
+    assert any("once per second" in str(l) for l in out) and game.tick_interval_ms == 20
+    # 空入力で中止(変更なし)
+    assert tick_screen(s, input_fn=lambda _: "", out=lambda *_: None) is False and game.tick_interval_ms == 20
+    # 設定画面(c): 2 を選ぶと、速さの画面に進む。1 は名前
+    game._tick_change_at = -1e9
+    out = []
+    answers = iter(["2", "100", "", ""])        # 2 → 100 ms → (速さの画面は成功して戻る)→ 空 = 設定画面を閉じる
+    config_screen(s, input_fn=lambda _: next(answers), out=out.append)
+    assert game.tick_interval_ms == 100
+    assert any("2) Tick interval" in str(l) and "100 ms" in str(l) for l in out)
+
+
+# --- サイドパネルの Config(マップの横。キーを 1 つずつ受け取る) ---
+def _keys(view, session, keys):
+    from ecologrid_cli import panel
+    for k in keys:
+        panel.handle_key(view, session, k)
+
+
+def test_side_panel_config_changes_tick_interval_and_name_with_keys(env):
+    from ecologrid_cli import panel
+    from ecologrid_cli.render import render
+    s, game, c = env
+    v = s.view
+    assert not panel.captures_input(v)
+    panel.open_config(v)
+    assert panel.captures_input(v) and v.panel_mode == "config"
+    out = render(v, cols=100, rows=32)
+    assert "Config (Esc/c: close)" in out and "1) Name" in out and "2) Tick : 50 ms (x1)" in out
+    # 2 → "max" → Enter: 最速(0)。成功したら、項目の選択に戻り、メッセージが出る
+    _keys(v, s, ["2", "m", "a", "x", "ENTER"])
+    assert game.tick_interval_ms == 0 and v.panel_mode == "config" and "Tick interval set" in v.panel_msg
+    assert "2) Tick : 0 ms (max speed)" in render(v, cols=100, rows=32)
+    # 範囲外 → 入力を残して、メッセージ。直して(BACKSPACE)再度 Enter。1 秒の制限(429)も、メッセージで知らせる
+    game._tick_change_at = -1e9
+    _keys(v, s, ["2", "9", "9", "9", "9", "ENTER"])
+    assert v.panel_mode == "tick" and "0 to 1000" in v.panel_msg and v.panel_buf == "9999"
+    _keys(v, s, ["BACKSPACE", "BACKSPACE", "BACKSPACE", "ENTER"])
+    assert game.tick_interval_ms == 9 and v.panel_mode == "config"
+    _keys(v, s, ["2", "5", "ENTER"])
+    assert v.panel_mode == "tick" and "once per second" in v.panel_msg and game.tick_interval_ms == 9
+    # Esc: 項目の選択に戻る。もう一度 Esc: 閉じる
+    _keys(v, s, ["ESC"])
+    assert v.panel_mode == "config"
+    _keys(v, s, ["ESC"])
+    assert v.panel_mode is None and not panel.captures_input(v)
+
+
+def test_side_panel_rename_checks_duplicates_and_accepts_unicode(env):
+    from ecologrid_cli import panel
+    from ecologrid_cli.api import ApiClient
+    from ecologrid_cli.session import Session
+    s, game, c = env
+    other = Session(ApiClient(http=c), "bob")
+    other.start()
+    v = s.view
+    panel.open_config(v)
+    _keys(v, s, ["1", "b", "o", "b", "ENTER"])                      # 使用中 → 入力を残して、メッセージ
+    assert v.panel_mode == "name" and "already used" in v.panel_msg
+    _keys(v, s, ["BACKSPACE", "BACKSPACE", "BACKSPACE", "人", "ENTER"])   # 全角の 1 文字も入力できる
+    assert v.panel_mode == "config" and s.name == "人" and v.my_name == "人"
+    assert game.world.players[s.api.player_id].name == "人"
+    # 空のまま Enter は、項目の選択に戻る。名前の長さの上限(24)
+    _keys(v, s, ["1", "ENTER"])
+    assert v.panel_mode == "config"
+    _keys(v, s, ["1"] + ["x"] * 30)
+    assert len(v.panel_buf) == 24
+
+
+def test_q_and_other_keys_are_text_while_the_panel_is_open(env):
+    from ecologrid_cli import panel
+    s, game, c = env
+    panel.open_config(s.view)
+    _keys(s.view, s, ["1", "q", "w", "a", "s"])
+    assert s.view.panel_buf == "qwas" and panel.captures_input(s.view)

@@ -19,7 +19,7 @@ docker-compose 1.22 / Docker 20.10 前提(古いため bullseye ベース。理�
 
 ## サーバ設定(環境変数、`docker-compose.yml` の `server.environment` か `-e` で指定)
 
-`ECOLOGRID_SEED` / `ECOLOGRID_REGIONS_X` / `ECOLOGRID_REGIONS_Y` / `ECOLOGRID_REGION_SIZE`(1 Region の一辺のセル数、既定 32。世界の大きさ = REGION_SIZE × REGIONS_X(Y)。視界(最大 8)の 2 倍未満は警告) / `ECOLOGRID_TICK_INTERVAL_MS`(1 tick の長さ、既定 50。サーバごとにゲームの進む速さを決める) /
+`ECOLOGRID_SEED` / `ECOLOGRID_REGIONS_X` / `ECOLOGRID_REGIONS_Y` / `ECOLOGRID_REGION_SIZE`(1 Region の一辺のセル数、既定 32。世界の大きさ = REGION_SIZE × REGIONS_X(Y)。視界(最大 8)の 2 倍未満は警告) / `ECOLOGRID_TICK_INTERVAL_MS`(1 tick の実時間(ms)。既定 50、整数の 0〜1000。**0 = 待たずに最速**。初期値で、稼働中は、プレイヤーが CLI の設定画面(`c`)または `PUT /api/v1/world/tick-interval` で変更できる) /
 `ECOLOGRID_MAX_PLAYERS`(100) / `ECOLOGRID_IDLE_TIMEOUT`(300秒) / `ECOLOGRID_JOIN_KEY`(任意) / `ECOLOGRID_AUTOTICK` / `ECOLOGRID_PLAYER_SLEEP`(`false` で Player の睡眠を無効に)
 
 **管理 API(管理者権限)**: `ECOLOGRID_ADMIN_KEY` を設定したときだけ有効(未設定なら常に 403)。リクエストに `X-Admin-Key: <キー>` を付ける。プレイヤーのトークンでは使えない。
