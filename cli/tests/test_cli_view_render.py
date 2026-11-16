@@ -177,16 +177,28 @@ def test_moved_event_adds_new_entities_entering_the_window_and_marks_window_dirt
     assert not v.in_view(*v.entities["r9"]["pos"]) and "Rabbit" not in v.census()
 
 
-def test_help_legend_beside_map():
+def _plain_view(name="", tick=50):
     rows = ["." * 32 for _ in range(32)]
     v = WorldView()
-    v.player_id, v.me_id = "pid", "me"
+    v.player_id, v.me_id, v.my_name = "pid", "me", name
     v.load(snap([ent("me", "Player", 10, 10, hydration=50, energy=50, health=50, player_id="pid")], rows))
+    v.tick_interval_ms = tick
+    return v
+
+
+def test_help_page_beside_map_and_over_the_map_on_a_narrow_terminal():
+    from ecologrid_cli import panel
+    v = _plain_view()
     assert "Legend" not in render(v, cols=100, rows=32)
-    assert v.toggle_help() is True
+    panel.toggle(v, "help")
     out = render(v, cols=100, rows=32)
-    assert "Legend" in out and "~ water" in out and "@ you" in out
-    assert "Legend" not in render(v, cols=40, rows=32)       # 幅が足りないときは出さない
+    assert "[Help]" in out and "Legend" in out and "~ water" in out and "@ you" in out
+    assert " . . . ." in out                                              # 広い端末: 地図の横に出す(地図も見える)
+    narrow = render(v, cols=60, rows=32)
+    assert "[Help]" in narrow and "~ water" in narrow                     # 狭い端末: 地図の上に重ねて、全面に出す
+    assert ". . . . . ." not in narrow and all(len(l) <= 60 for l in narrow.split("\n"))
+    panel.toggle(v, "help")                                               # もう一度 h で閉じる(地図に戻る)
+    assert "Legend" not in render(v, cols=60, rows=32) and ". . . ." in render(v, cols=60, rows=32)
 
 
 def test_player_glyph_is_first_char_of_name_and_self_is_highlighted():
@@ -210,38 +222,62 @@ def test_legend_shows_the_current_tick_interval():
     v = WorldView()
     v.player_id, v.me_id, v.my_name = "pid", "me", "Zed"
     v.load(snap([ent("me", "Player", 10, 10, hydration=50, energy=50, health=50, player_id="pid")], rows))
-    v.toggle_help()
+    from ecologrid_cli import panel
+    panel.toggle(v, "help")
     v.tick_interval_ms = 50
-    assert "Tick: 50 ms (x1)" in render(v, cols=100, rows=32)
+    assert "Tick: 50 ms (x1)" in render(v, cols=100, rows=40)
     v.apply([{"type": "tick_interval_changed", "player_id": "x", "name": "bob", "previous": 50, "tick_interval_ms": 0}])
-    out = render(v, cols=100, rows=32)
+    out = render(v, cols=100, rows=40)
     assert "Tick: 0 ms (max speed)" in out and v.log[-1] == "bob changed the tick interval: 50 -> 0 ms (max speed)"
     v.tick_interval_ms = 10
-    assert "10 ms (x5)" in render(v, cols=100, rows=32)
+    assert "10 ms (x5)" in render(v, cols=100, rows=40)
     v.tick_interval_ms = 1000
-    assert "x0.05" in render(v, cols=100, rows=32)
+    assert "x0.05" in render(v, cols=100, rows=40)
 
 
-def test_config_panel_is_shown_beside_the_map_only_when_there_is_room():
+def test_config_page_beside_the_map_and_over_it_on_a_narrow_terminal():
     from ecologrid_cli import panel
-    rows = ["." * 32 for _ in range(32)]
-    v = WorldView()
-    v.player_id, v.me_id, v.my_name = "pid", "me", "Zed"
-    v.load(snap([ent("me", "Player", 10, 10, hydration=50, energy=50, health=50, player_id="pid")], rows))
-    v.tick_interval_ms = 50
-    panel.open_config(v)
+    v = _plain_view("Zed")
+    panel.open_page(v, "config")
     wide = render(v, cols=100, rows=32)
-    assert "Config (Esc/c: close)" in wide and "1) Name : Zed" in wide
-    assert all(len(l) <= 100 for l in wide.split("\n"))                 # 端末の幅を超えない
-    assert "Config" not in render(v, cols=60, rows=32)                    # 幅が足りないときは、パネルを出さない
-    v.panel_mode, v.panel_buf = "name", "Ken"
-    assert "Config > Name" in render(v, cols=100, rows=32) and "> Ken_" in render(v, cols=100, rows=32)
-    v.panel_mode, v.panel_buf, v.panel_msg = "tick", "10", "Enter an integer from 0 to 1000, or 'max'."
+    assert "[Config]" in wide and "1) Name : Zed" in wide and "Help" in wide       # 見出しに、現在のページと、他のページの名前
+    assert all(len(l) <= 100 for l in wide.split("\n"))                           # 端末の幅を超えない
+    narrow = render(v, cols=60, rows=32)
+    assert "[Config]" in narrow and "1) Name : Zed" in narrow                       # 狭い端末でも、同じ内容(全面に出す)
+    v.panel.sub, v.panel.buf = "name", "Ken"
     out = render(v, cols=100, rows=32)
-    assert "Config > Tick interval" in out and "> 10_" in out and "Enter an integer" in out
+    assert "New name" in out and "> Ken_" in out
+    v.panel.sub, v.panel.buf, v.panel.msg = "tick", "10", "Enter an integer from 0 to 1000, or 'max'."
+    out = render(v, cols=100, rows=32)
+    assert "0 to 1000 ms" in out and "> 10_" in out and "Enter an integer" in out
     panel.close(v)
-    v.toggle_help()
-    assert "Help: Legend" in render(v, cols=100, rows=32)
+    assert "[Config]" not in render(v, cols=100, rows=32)
+
+
+def test_panel_body_scrolls_with_up_down_when_it_does_not_fit():
+    from ecologrid_cli import panel
+    from ecologrid_cli.pages import HelpPage
+    v = _plain_view()
+    panel.toggle(v, "help")
+    out = render(v, cols=100, rows=24)                       # 低い端末: 本文が収まらない
+    assert v.panel.max_scroll > 0 and "Up/Down:scroll" in out and "Keys" not in out        # 本文が収まらない: スクロールの案内が出る
+    # ↑↓ は、はみ出している間だけ、パネルがスクロールに使う
+    seen = set(l.strip() for l in out.split("\n"))
+    for _ in range(v.panel.max_scroll):
+        assert panel.handle_key(v, None, "DOWN") is True
+        seen |= set(l.strip() for l in render(v, cols=100, rows=24).split("\n"))
+    assert v.panel.scroll == v.panel.max_scroll
+    assert any(l.endswith("quit") for l in seen) and any("respawn" in l for l in seen)       # 最後(Keys)まで見える
+    assert panel.handle_key(v, None, "DOWN") is True and v.panel.scroll == v.panel.max_scroll  # 端で止まる
+    for _ in range(v.panel.max_scroll + 2):
+        panel.handle_key(v, None, "UP")
+    assert v.panel.scroll == 0
+    # 収まる高さなら、↑↓ はパネルが使わない(ゲームの移動に使う)
+    tall = render(v, cols=100, rows=50)
+    assert v.panel.max_scroll == 0 and panel.handle_key(v, None, "UP") is False
+    assert "respawn" in tall
+    body = HelpPage().body(v, 34, False)
+    assert len(body) > 20
 
 
 import pytest
@@ -258,7 +294,7 @@ def _disp_width(s):
     return sum(2 if _ud.east_asian_width(c) in "WF" else 1 for c in _ANSI.sub("", s))
 
 
-def _layout_view(page, log=4, alive=True):
+def _layout_view(page, log=4, alive=True, scroll=0):
     from ecologrid_cli import panel
     rows = ["." * 64 for _ in range(64)]
     v = WorldView()
@@ -269,23 +305,25 @@ def _layout_view(page, log=4, alive=True):
         v.log.append(f"message number {i} " + "x" * 40)
     v.alive = alive
     if page == "help":
-        v.toggle_help()
-    elif page in ("config", "name", "tick"):
-        panel.open_config(v)
-        v.panel_mode = page
-        v.panel_buf, v.panel_msg = "1234", "Enter an integer from 0 to 1000, or 'max'. " * 2
+        panel.open_page(v, "help")
+    elif page in ("menu", "name", "tick"):
+        panel.open_page(v, "config")
+        v.panel.sub = page
+        v.panel.buf, v.panel.msg = "1234", "Enter an integer from 0 to 1000, or 'max'. " * 2
+    v.panel.scroll = scroll
     return v
 
 
-@pytest.mark.parametrize("page", [None, "help", "config", "name", "tick"])
+@pytest.mark.parametrize("page", [None, "help", "menu", "name", "tick"])
 @pytest.mark.parametrize("color", [False, True])
 def test_frame_fits_the_terminal_for_any_size_and_page(page, color):
     for cols in list(range(40, 131, 3)) + [99, 100, 101, 102, 110, 111, 150, 160, 200, 240]:   # 幅の半分が偶数・奇数の両方を含む
         for rows in (16, 24, 25, 30, 31, 32, 41):
             for alive in (True, False):
-                out = render(_layout_view(page, alive=alive), cols=cols, rows=rows, color=color).split("\n")
-                assert len(out) <= rows, (cols, rows, page, len(out))
-                assert max(_disp_width(l) for l in out) <= cols, (cols, rows, page)
+                for scroll in ((0, 99) if page else (0,)):               # 先頭と、最後までスクロールした状態
+                    out = render(_layout_view(page, alive=alive, scroll=scroll), cols=cols, rows=rows, color=color).split("\n")
+                    assert len(out) <= rows, (cols, rows, page, len(out))
+                    assert max(_disp_width(l) for l in out) <= cols, (cols, rows, page)
 
 
 def test_map_keeps_the_player_cell_at_the_center_and_odd_size():
