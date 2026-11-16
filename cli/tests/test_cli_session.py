@@ -274,24 +274,19 @@ def test_window_follows_the_player_when_moving(env):
     assert s.view.me_pos == (c.x, c.y) and (c.x, c.y) in s.view.win            # 窓が、新しい位置に追従した
 
 
-def test_config_screen_asks_again_when_name_is_taken(env):
+def test_startup_rename_screen_asks_again_when_name_is_taken(env):
     from ecologrid_cli.api import ApiClient
-    from ecologrid_cli.play import rename_screen, start_interactive
+    from ecologrid_cli.play import start_interactive
     from ecologrid_cli.session import Session
     s, game, c = env
     other = Session(ApiClient(http=c), "bob")
     other.start()
-    answers = iter(["bob", "carol"])                      # 使用中 → 再入力
-    out = []
-    assert rename_screen(s, input_fn=lambda _: next(answers), out=out.append) is True
-    assert any("already used" in str(l) for l in out)
-    assert s.name == "carol" and game.world.players[s.api.player_id].name == "carol"
     # 起動時に使用中なら、名前の変更画面で再設定させる(再設定でも重複チェック)
     dup = Session(ApiClient(http=c), "bob")
-    answers = iter(["bob", "carol", "dave"])
+    answers = iter(["bob", "dave"])                       # 起動時に使用中 → 再入力しても使用中 → 空いている名前
     out = []
     assert start_interactive(dup, input_fn=lambda _: next(answers), out=out.append) is True
-    assert dup.name == "dave" and sum("already used" in str(l) for l in out) == 3
+    assert dup.name == "dave" and sum("already used" in str(l) for l in out) == 2
     # 空入力で中止
     dup2 = Session(ApiClient(http=c), "dave")
     assert start_interactive(dup2, input_fn=lambda _: "", out=lambda *_: None) is False
@@ -316,35 +311,6 @@ def test_session_changes_tick_interval_and_other_players_get_the_event(env):
     assert other.tick_interval_ms == 0                           # 定期の突き合わせ(/healthz)でも同じ値
 
 
-def test_tick_screen_validates_input_and_handles_server_errors(env):
-    from ecologrid_cli.play import config_screen, tick_screen
-    s, game, c = env
-    out = []
-    answers = iter(["abc", "1001", "-5", "max"])                 # 範囲外・数字でない → 再入力 → max = 0
-    assert tick_screen(s, input_fn=lambda _: next(answers), out=out.append) is True
-    assert s.tick_interval_ms == 0 and game.tick_interval_ms == 0
-    assert sum("Enter an integer from 0 to 1000" in str(l) for l in out) == 3
-    # 変更が早すぎる(429)→ メッセージを出して再入力 → 解除後に成功
-    out = []
-    seq = iter(["20", "20"])
-    def ask(_):
-        v = next(seq)
-        if v == "20" and any("once per second" in str(l) for l in out):
-            game._tick_change_at = -1e9
-        return v
-    assert tick_screen(s, input_fn=ask, out=out.append) is True
-    assert any("once per second" in str(l) for l in out) and game.tick_interval_ms == 20
-    # 空入力で中止(変更なし)
-    assert tick_screen(s, input_fn=lambda _: "", out=lambda *_: None) is False and game.tick_interval_ms == 20
-    # 設定画面(c): 2 を選ぶと、速さの画面に進む。1 は名前
-    game._tick_change_at = -1e9
-    out = []
-    answers = iter(["2", "100", "", ""])        # 2 → 100 ms → (速さの画面は成功して戻る)→ 空 = 設定画面を閉じる
-    config_screen(s, input_fn=lambda _: next(answers), out=out.append)
-    assert game.tick_interval_ms == 100
-    assert any("2) Tick interval" in str(l) and "100 ms" in str(l) for l in out)
-
-
 # --- サイドパネルの Config(マップの横。キーを 1 つずつ受け取る) ---
 def _keys(view, session, keys):
     from ecologrid_cli import panel
@@ -358,27 +324,27 @@ def test_side_panel_config_changes_tick_interval_and_name_with_keys(env):
     s, game, c = env
     v = s.view
     assert not panel.captures_input(v)
-    panel.open_config(v)
-    assert panel.captures_input(v) and v.panel_mode == "config"
+    panel.open_page(v, "config")
+    assert panel.captures_input(v) and v.panel.page == "config" and v.panel.sub == "menu"
     out = render(v, cols=100, rows=32)
-    assert "Config (Esc/c: close)" in out and "1) Name" in out and "2) Tick : 50 ms (x1)" in out
+    assert "[Config]" in out and "1) Name" in out and "2) Tick : 50 ms (x1)" in out
     # 2 → "max" → Enter: 最速(0)。成功したら、項目の選択に戻り、メッセージが出る
     _keys(v, s, ["2", "m", "a", "x", "ENTER"])
-    assert game.tick_interval_ms == 0 and v.panel_mode == "config" and "Tick interval set" in v.panel_msg
+    assert game.tick_interval_ms == 0 and v.panel.page == "config" and v.panel.sub == "menu" and "Tick interval set" in v.panel.msg
     assert "2) Tick : 0 ms (max speed)" in render(v, cols=100, rows=32)
     # 範囲外 → 入力を残して、メッセージ。直して(BACKSPACE)再度 Enter。1 秒の制限(429)も、メッセージで知らせる
     game._tick_change_at = -1e9
     _keys(v, s, ["2", "9", "9", "9", "9", "ENTER"])
-    assert v.panel_mode == "tick" and "0 to 1000" in v.panel_msg and v.panel_buf == "9999"
+    assert v.panel.page == "config" and v.panel.sub == "tick" and "0 to 1000" in v.panel.msg and v.panel.buf == "9999"
     _keys(v, s, ["BACKSPACE", "BACKSPACE", "BACKSPACE", "ENTER"])
-    assert game.tick_interval_ms == 9 and v.panel_mode == "config"
+    assert game.tick_interval_ms == 9 and v.panel.page == "config" and v.panel.sub == "menu"
     _keys(v, s, ["2", "5", "ENTER"])
-    assert v.panel_mode == "tick" and "once per second" in v.panel_msg and game.tick_interval_ms == 9
+    assert v.panel.page == "config" and v.panel.sub == "tick" and "once per second" in v.panel.msg and game.tick_interval_ms == 9
     # Esc: 項目の選択に戻る。もう一度 Esc: 閉じる
     _keys(v, s, ["ESC"])
-    assert v.panel_mode == "config"
+    assert v.panel.page == "config" and v.panel.sub == "menu"
     _keys(v, s, ["ESC"])
-    assert v.panel_mode is None and not panel.captures_input(v)
+    assert v.panel.page is None and not panel.captures_input(v)
 
 
 def test_side_panel_rename_checks_duplicates_and_accepts_unicode(env):
@@ -389,22 +355,22 @@ def test_side_panel_rename_checks_duplicates_and_accepts_unicode(env):
     other = Session(ApiClient(http=c), "bob")
     other.start()
     v = s.view
-    panel.open_config(v)
+    panel.open_page(v, "config")
     _keys(v, s, ["1", "b", "o", "b", "ENTER"])                      # 使用中 → 入力を残して、メッセージ
-    assert v.panel_mode == "name" and "already used" in v.panel_msg
+    assert v.panel.page == "config" and v.panel.sub == "name" and "already used" in v.panel.msg
     _keys(v, s, ["BACKSPACE", "BACKSPACE", "BACKSPACE", "人", "ENTER"])   # 全角の 1 文字も入力できる
-    assert v.panel_mode == "config" and s.name == "人" and v.my_name == "人"
+    assert v.panel.page == "config" and v.panel.sub == "menu" and s.name == "人" and v.my_name == "人"
     assert game.world.players[s.api.player_id].name == "人"
     # 空のまま Enter は、項目の選択に戻る。名前の長さの上限(24)
     _keys(v, s, ["1", "ENTER"])
-    assert v.panel_mode == "config"
+    assert v.panel.page == "config" and v.panel.sub == "menu"
     _keys(v, s, ["1"] + ["x"] * 30)
-    assert len(v.panel_buf) == 24
+    assert len(v.panel.buf) == 24
 
 
 def test_q_and_other_keys_are_text_while_the_panel_is_open(env):
     from ecologrid_cli import panel
     s, game, c = env
-    panel.open_config(s.view)
+    panel.open_page(s.view, "config")
     _keys(s.view, s, ["1", "q", "w", "a", "s"])
-    assert s.view.panel_buf == "qwas" and panel.captures_input(s.view)
+    assert s.view.panel.buf == "qwas" and panel.captures_input(s.view)

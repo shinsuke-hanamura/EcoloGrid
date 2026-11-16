@@ -10,6 +10,18 @@ STATE_MESSAGES = {"fell_asleep": "You fell asleep.", "woke_up": "You woke up.", 
 PRIORITY = ["Player", "Fox", "Rabbit", "Egg", "Wheat", "Grass", "Seed"]
 
 
+class PanelState:
+    """サイドパネル(マップの横の、情報と操作の領域)の状態。page が None なら、閉じている。"""
+
+    def __init__(self):
+        self.page: Optional[str] = None     # "help" / "config" / None(閉じている)
+        self.sub: str = ""                  # ページの中の状態(Config: "menu" / "name" / "tick")
+        self.buf: str = ""                  # 入力中の文字列
+        self.msg: str = ""                  # パネルに出すメッセージ(成功・エラー)
+        self.scroll: int = 0                # 本文の先頭の行(↑↓ でスクロール)
+        self.max_scroll: int = 0            # 本文がはみ出している行数(描画のたびに更新。0 ならスクロール不要)
+
+
 STANDARD_TICK_MS = 50
 
 
@@ -29,10 +41,7 @@ class WorldView:
         self.game_time: Optional[dict] = None   # サーバが返した、自分の居る Region の惑星の時計
         self.tick_interval_ms: Optional[int] = None   # 現在の 1 tick の実時間(ms)。0 = 最速
         self.my_name = ""                   # 自分の名前(マップ上の表示は、その 1 文字目)
-        self.panel_mode = None              # サイドパネルの Config(None / "config" / "name" / "tick")。panel.py
-        self.panel_buf = ""
-        self.panel_msg = ""
-        self.show_help = False              # h キーで、マップ横の凡例(文字の説明)を出す
+        self.panel = PanelState()           # サイドパネル(Help・Config)の状態。panel.py・pages.py
         self.time_format = "clock"          # "clock"(Day 3 14:05:30)/ "tick"(Tick 259,200)
         self.rows: Dict[Tuple[int, int], List[str]] = {}          # Region -> 地形の行
         self.entities: Dict[str, dict] = {}                       # id -> {species,name,pos,...}
@@ -89,10 +98,6 @@ class WorldView:
         if self.view_r is None or self.me_pos is None:
             return True
         return max(abs(x - self.me_pos[0]), abs(y - self.me_pos[1])) <= self.view_r
-
-    def toggle_help(self) -> bool:
-        self.show_help = not self.show_help
-        return self.show_help
 
     def toggle_time_format(self) -> str:
         self.time_format = "tick" if self.time_format == "clock" else "clock"
