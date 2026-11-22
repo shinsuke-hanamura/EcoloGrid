@@ -10,11 +10,13 @@ from .actions import (ActionStore, InMemoryActionStore, ScheduledAction, TimerWh
                       START_SPAWN, ENTITY, WORLD, get_entity_handler, get_handler, run_due_actions,
                       scopes_for_region)
 from .grid import DIRS, Pos, RegionId, chebyshev, manhattan, region_of
+from .commands import check_command
 from .messages import Command
 from .rng import make_rng, new_id
 from .seed import germinate_action_id
 from .percept_map import BUCKET
 from .species import PLANT_KEYS
+from .state import CANCEL_ACTIONS, ENTER_ACTIONS
 from .terrain import LAND, WATER, Terrain
 
 
@@ -400,22 +402,13 @@ class Region:
         p = self.entities.get(entity_id)
         if p is None:
             return
-        if p.state != "awake":                    # 睡眠・意識消失中はコマンドを拒否
-            self._reject(cmd, "asleep" if p.state == "sleeping" else "unconscious")
-            return
-        sp = p.spec
-        cost = {"move": sp.stamina_cost_move, "eat": sp.stamina_cost_eat,
-                "drink": sp.stamina_cost_drink}.get(cmd.type)
-        if cost is not None and p.stamina < cost:
-            self._reject(cmd, "exhausted")        # スタミナ不足(息切れ)
+        reason = check_command(p, self, cmd.type, cmd.args)     # 拒否の理由(止めている状態の名前・exhausted など)
+        if reason is not None:
+            self._reject(cmd, reason)
             return
         if cmd.type == "move":
-            d = cmd.args.get("dir")
-            if d not in DIRS:
-                self._reject(cmd, "bad_dir")
-            else:
-                p.stop_rest(self)                 # 移動の指示で休憩を終える
-                p.pending_move = d
+            p.stop_rest(self)                     # 移動の指示で休憩を終える
+            p.pending_move = cmd.args.get("dir")
         elif cmd.type == "eat":
             if not p.eat_here(self, record_failure=True):
                 self._reject(cmd, "no_prey")
@@ -425,8 +418,10 @@ class Region:
         elif cmd.type == "rest":
             if not p.start_rest(self) and not p.resting:
                 self._reject(cmd, "unsafe")
-        elif cmd.type != "wait":
-            self._reject(cmd, "unknown_command")
+        elif cmd.type in ENTER_ACTIONS:           # 体制に入る(すでに入っていれば、何も起こらない)
+            p.set_state(ENTER_ACTIONS[cmd.type], True, self, reason="entered")
+        elif cmd.type in CANCEL_ACTIONS:          # 体制を解除する(その体制でなければ、何も起こらない)
+            p.set_state(CANCEL_ACTIONS[cmd.type], False, self, reason="cancelled")
 
     # --- スナップショット ---
     def terrain_rows(self) -> List[str]:

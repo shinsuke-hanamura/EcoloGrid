@@ -12,22 +12,23 @@ class Player(Animal):
         self._last_stats = None
 
     def act(self, region) -> None:
-        if self.state != "awake":
-            self.pending_move = None               # 眠っている間は動けない(未処理の移動は破棄)
+        if not self.action_allowed("move"):
+            self.pending_move = None               # 眠っている・入眠体制の間は動けない(未処理の移動は破棄)
         elif self.pending_move and (self.energy <= 0 or self.stamina < self.spec.stamina_cost_move):
             self.pending_move = None
         elif self.pending_move and region.tick_no >= self.next_move_tick:
             self.try_step(self.pending_move, region)   # 失敗(壁)でも消費して破棄
             self.pending_move = None
         wmax = self.wakefulness_max
+        pct = int(100 * self.effective("wakefulness", self.wakefulness / wmax)) if wmax else 100   # 体制の係数をかけた後の値
         stats = (int(self.hydration), int(self.energy), int(self.health), int(self.stamina),
-                 int(100 * self.wakefulness / wmax) if wmax else 100, self.state, self.resting)
+                 pct, tuple(self.state.active()), self.resting)
         if stats != self._last_stats and not self.dead:
             self._last_stats = stats
             region.emit("stats_changed", [region.rid], player_id=self.player_id,
                         id=self.entity_id, hydration=stats[0], energy=stats[1],
                         health=stats[2], stamina=stats[3], wakefulness_pct=stats[4],
-                        state=stats[5], resting=stats[6])
+                        state=list(stats[5]), resting=stats[6])
 
     def after_enter(self, region) -> None:
         pass   # Player の捕食は eat コマンドで明示的に行う

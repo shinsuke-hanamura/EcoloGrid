@@ -215,7 +215,7 @@ def test_bot_sends_commands_at_move_interval_not_every_poll():
 def test_bot_sleep_and_rest_decisions():
     # 眠っている間はコマンドを送らない
     v = _bot_view()
-    v.vitals["state"] = "sleeping"
+    v.vitals["state"] = ["asleep"]
     assert Bot(_S(v), 1).decide() is None
     # スタミナが低ければ休憩する。休憩中で満タンでなければ続ける。満タンなら通常の行動(移動など)で休憩を終える
     v = _bot_view()
@@ -374,3 +374,26 @@ def test_q_and_other_keys_are_text_while_the_panel_is_open(env):
     panel.open_page(s.view, "config")
     _keys(s.view, s, ["1", "q", "w", "a", "s"])
     assert s.view.panel.buf == "qwas" and panel.captures_input(s.view)
+
+
+# --- 入眠体制(issue 6): サーバと CLI の一連の流れ ---
+def test_sleep_and_cancel_sleep_flow_through_the_session(env):
+    from ecologrid_cli.render import render
+    s, game, c = env
+    p = game.world.player_entity(s.api.player_id)
+    p.wakefulness = p.wakefulness_max * 0.8
+    assert s.view.state_info["sleep_stance"]["label"] == "Ready to sleep"          # /config の states から
+    assert s.send("sleep") == "queued"
+    game.step()
+    s.poll(0)
+    assert "sleep_stance" in s.view.vitals["state"] and "State Ready to sleep" in render(s.view, cols=100, rows=30)
+    assert s.view.log[-1] == "You get ready to sleep." and 14 <= s.view.vitals["wakefulness"] <= 16       # バーは、有効な値
+    s.send("move", dir="n")                                  # 体制の間は、動けない
+    game.step()
+    s.poll(0)
+    assert s.view.log[-1] == "Rejected: blocked by Ready to sleep (press L to cancel)"
+    s.send("cancel_sleep")
+    game.step()
+    s.poll(0)
+    assert "sleep_stance" not in s.view.vitals["state"] and s.view.log[-1] == "You stop getting ready to sleep."
+    assert "State Awake" in render(s.view, cols=100, rows=30) and s.view.vitals["wakefulness"] >= 78

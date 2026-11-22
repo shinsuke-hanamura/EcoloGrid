@@ -94,11 +94,13 @@ def test_hydration_unaffected_by_actions_and_state():
     w = empty_world()
     r, rb = _rabbit(w)
     rates = []
-    for mode in ("awake", "sleeping", "resting", "acting"):
+    for mode in ("awake", "asleep", "resting", "acting"):
         rb.hydration = 100
-        rb.state, rb.resting, rb.last_action_tick = "awake", False, -10**9
-        if mode == "sleeping":
-            rb.state = "sleeping"
+        rb.set_consciousness("awake")
+        rb.resting = False
+        rb.last_action_tick = -10**9
+        if mode == "asleep":
+            rb.set_consciousness("asleep")
         elif mode == "resting":
             rb.resting = True
         elif mode == "acting":

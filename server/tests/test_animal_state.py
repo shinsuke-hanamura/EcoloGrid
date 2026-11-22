@@ -66,7 +66,8 @@ def test_wakefulness_decays_constantly_awake_regardless_of_action_and_health():
 
 def test_wakefulness_recovers_when_sleeping_and_caps():
     w, r, a, _ = _setup("Rabbit")
-    a.state, a.wakefulness = "sleeping", 50.0
+    a.set_consciousness("asleep")
+    a.wakefulness = 50.0
     rec = SPECIES["Rabbit"].wakefulness_recovery_per_tick
     assert rec == pytest.approx(100 / 41_400)
     _tick(r, a, 100)
@@ -82,20 +83,20 @@ def test_faint_at_zero_and_regain_to_sleeping():
     a.wakefulness = SPECIES["Rabbit"].wakefulness_decay_per_tick * 0.5
     r.tick_no = 777
     _tick(r, a)
-    assert a.state == "unconscious" and a.wakefulness == 0.0
+    assert a.consciousness == "unconscious" and a.wakefulness == 0.0
     assert a.sleep_onset_history == [778]
     assert any(e["type"] == "fainted" for e in r.events)
     a.sleep_check(r, 1_200)                                                 # 意識消失中は起床の判定をしない
-    assert a.state == "unconscious"
+    assert a.consciousness == "unconscious"
     _tick(r, a, int(10 / SPECIES["Rabbit"].wakefulness_recovery_per_tick) + 2)   # 最大値の 10% に達する
-    assert a.state == "sleeping"
+    assert a.consciousness == "asleep"
 
 
 def test_sleep_history_keeps_last_five():
     w, r, a, _ = _setup("Fox")
     for t in range(1, 9):
         r.tick_no = t * 1_000
-        a.state = "awake"
+        a.set_consciousness("awake")
         a.fall_asleep(r)
     assert a.sleep_onset_history == [4_000, 5_000, 6_000, 7_000, 8_000]
 
@@ -106,9 +107,9 @@ def _frequency(a, r, n, state, **spec_kw):
     a.spec = replace(a.spec, **spec_kw)
     hits = 0
     for t in range(1, n + 1):
-        a.state = state
+        a.set_consciousness(state)
         a.sleep_check(r, t * 600)
-        hits += a.state != state
+        hits += a.consciousness != state
     return hits / n
 
 
@@ -123,19 +124,19 @@ def test_sleep_check_matches_expected_probability():
 def test_wake_check_matches_wake_probability():
     w, r, a, _ = _setup("Rabbit")
     a.wakefulness = 90.0                                # x = 0.9 → 起床確率 14.8%
-    p = _frequency(a, r, 4000, "sleeping")
+    p = _frequency(a, r, 4000, "asleep")
     assert p == pytest.approx(0.148, abs=0.03)
     a.wakefulness = 60.0
-    assert _frequency(a, r, 500, "sleeping") == 0.0     # 覚醒度が低いと起きない
+    assert _frequency(a, r, 500, "asleep") == 0.0     # 覚醒度が低いと起きない
 
 
 def test_certain_sleep_when_probability_is_one():
     w, r, a, _ = _setup("Rabbit")
     a.wakefulness = 0.001                                # x ≈ 0 → 入眠圧 ≥ 1.0。周期の頂点(標準入眠時刻)なら 1.3 で必ず入眠
-    a.state = "awake"
+    a.set_consciousness("awake")
     r.tick_no = SPECIES["Rabbit"].sleep_standard_onset_tick
     a.sleep_check(r, r.tick_no)
-    assert a.state == "sleeping" and a.sleep_onset_history == [SPECIES["Rabbit"].sleep_standard_onset_tick]
+    assert a.consciousness == "asleep" and a.sleep_onset_history == [SPECIES["Rabbit"].sleep_standard_onset_tick]
     assert any(e["type"] == "fell_asleep" for e in r.events)
 
 
@@ -143,19 +144,20 @@ def test_no_sleep_when_unsafe_or_starving():
     w, r, a, _ = _setup("Rabbit")
     a.wakefulness = 0.001
     tick = SPECIES["Rabbit"].sleep_standard_onset_tick
-    a.in_combat = True
+    a.state["in_combat"] = True
     a.sleep_check(r, tick)
-    assert a.state == "awake"                            # 戦闘状態では入眠しない
-    a.in_combat, a.falling = False, True
+    assert a.consciousness == "awake"                            # 戦闘状態では入眠しない
+    a.state["in_combat"] = False
+    a.state["falling"] = True
     a.sleep_check(r, tick)
-    assert a.state == "awake"                            # 落下中も
-    a.falling = False
+    assert a.consciousness == "awake"                            # 落下中も
+    a.state["falling"] = False
     a.energy = 0                                         # 飢えレベル 1 → 入眠圧 0
     a.sleep_check(r, tick)
-    assert a.state == "awake"
+    assert a.consciousness == "awake"
     a.energy = 100
     a.sleep_check(r, tick)
-    assert a.state == "sleeping"
+    assert a.consciousness == "asleep"
 
 
 def test_sleep_peak_follows_recorded_onsets():
@@ -166,10 +168,11 @@ def test_sleep_peak_follows_recorded_onsets():
     def hits(clock_hour, n=400):
         count = 0
         for k in range(1, n + 1):
-            a.state, a.sleep_onset_history = "awake", [10 * 3_600] * 4     # 習慣の入眠時刻は 10 時
+            a.set_consciousness("awake")
+            a.sleep_onset_history = [10 * 3_600] * 4     # 習慣の入眠時刻は 10 時
             r.tick_no = clock_hour * 3_600 + k * DAY
             a.sleep_check(r, r.tick_no)
-            count += a.state == "sleeping"
+            count += a.consciousness == "asleep"
         return count / n
 
     assert hits(10) == 1.0            # 頂点(10 時): 入眠圧 1.2 ≥ 1.122 → 必ず入眠
@@ -193,22 +196,23 @@ def _fox_with_rabbit():
 def test_can_eat_conditions():
     w, r, a, _ = _setup("Fox")
     assert a.can_eat()
-    a.state = "sleeping"
+    a.set_consciousness("asleep")
     assert not a.can_eat()
-    a.state = "unconscious"
+    a.set_consciousness("unconscious")
     assert not a.can_eat()
-    a.state = "awake"
+    a.set_consciousness("awake")
     a.energy = 0
     assert not a.can_eat()                               # Energy 0 は体が動かない
     a.energy = 50
     a.stamina = SPECIES["Fox"].stamina_cost_eat - 1e-6
     assert not a.can_eat()                               # スタミナが捕食の消費に足りない
     a.stamina = 50
-    a.in_combat = True
+    a.state["in_combat"] = True
     assert not a.can_eat()
-    a.in_combat, a.falling = False, True
+    a.state["in_combat"] = False
+    a.state["falling"] = True
     assert not a.can_eat()
-    a.falling = False
+    a.state["falling"] = False
     assert a.can_eat() and a.is_safe()
 
 
@@ -222,16 +226,16 @@ def test_npc_auto_eat_only_when_hungry_and_can_eat():
     assert rabbit.entity_id not in r.entities and fox.energy > 20
 
 
-@pytest.mark.parametrize("setup", ["sleeping", "unconscious", "combat", "falling", "tired"])
+@pytest.mark.parametrize("setup", ["asleep", "unconscious", "combat", "falling", "tired"])
 def test_npc_does_not_eat_when_cannot(setup):
     w, r, fox, rabbit = _fox_with_rabbit()
     fox.energy = 20
-    if setup in ("sleeping", "unconscious"):
-        fox.state = setup
+    if setup in ("asleep", "unconscious"):
+        fox.set_consciousness(setup)
     elif setup == "combat":
-        fox.in_combat = True
+        fox.state["in_combat"] = True
     elif setup == "falling":
-        fox.falling = True
+        fox.state["falling"] = True
     else:
         fox.stamina = 0.0
     fox.after_enter(r)
@@ -249,7 +253,7 @@ def test_eating_costs_stamina_and_marks_action():
 
 def test_sleeping_npc_does_not_think_or_move():
     w, r, a, pos = _setup("Rabbit")
-    a.state = "sleeping"
+    a.set_consciousness("asleep")
     a.wakefulness = 30.0
     a.energy = 10                                         # 空腹でも動かない
     start = a.grid_position
@@ -284,14 +288,16 @@ def test_state_table_health_and_stamina_rates():
 
     def step(mode):
         a.health, a.stamina = 50.0, 20.0
-        a.state, a.resting, a.last_action_tick = "awake", False, -10**9
+        a.set_consciousness("awake")
+        a.resting = False
+        a.last_action_tick = -10**9
         a.wakefulness = 60.0
         if mode == "acting":
             a.last_action_tick = r.tick_no + 1
         elif mode == "resting":
             a.resting = True
-        elif mode in ("sleeping", "unconscious"):
-            a.state = mode
+        elif mode in ("asleep", "unconscious"):
+            a.set_consciousness(mode)
         a.energy = a.hydration = 100.0
         r.tick_no += 1
         a.tick(r)
@@ -301,14 +307,17 @@ def test_state_table_health_and_stamina_rates():
     assert h == 0 and st == 0                                           # 動作中: 回復しない
     h, st = step("idle")
     assert h == pytest.approx(base_regen) and st == pytest.approx(10 * base_regen)   # 静止: 体力 + 0.000772、スタミナ + 0.007716
-    for mode in ("resting", "sleeping", "unconscious"):
+    for mode in ("resting", "asleep", "unconscious"):
         h, st = step(mode)
         assert h == pytest.approx(rest_regen) and st == pytest.approx(10 * rest_regen), mode   # 0.003472 / 0.034722
 
 
 def test_rabbit_rest_regen_is_faster():
     w, r, a, _ = _setup("Rabbit")
-    a.state, a.wakefulness, a.health, a.stamina = "sleeping", 30.0, 50.0, 20.0
+    a.set_consciousness("asleep")
+    a.wakefulness = 30.0
+    a.health = 50.0
+    a.stamina = 20.0
     r.tick_no += 1
     a.tick(r)
     assert a.health - 50 == pytest.approx(100 / 25_200)
@@ -380,7 +389,10 @@ def test_temperature_net_stamina_is_recovery_minus_drain():
     r.temperature_c = 50.0
     a.health = 100.0
     # 静止: 0.007716 − 0.010 = −0.002284(減る)。休憩: 0.034722 − 0.010 = + 0.024722
-    a.stamina, a.state, a.resting, a.last_action_tick = 50.0, "awake", False, -10**9
+    a.stamina = 50.0
+    a.set_consciousness("awake")
+    a.resting = False
+    a.last_action_tick = -10**9
     r.tick_no += 1
     a.tick(r)
     assert a.stamina - 50 == pytest.approx(100 / 129_600 * 10 - 0.010)
@@ -437,7 +449,7 @@ def test_rest_rejected_when_unsafe():
     w = empty_world()
     pid = w.add_player("p")
     p = w.player_entity(pid)
-    p.in_combat = True
+    p.state["in_combat"] = True
     w.submit(Command("r1", pid, "rest", {}))
     w.tick()
     assert not p.resting
@@ -452,16 +464,17 @@ def test_player_commands_rejected_when_asleep_or_unconscious_or_exhausted():
     def reasons():
         return [e["reason"] for e in w._events if e["type"] == "command_rejected"]
 
-    p.state = "sleeping"
+    p.set_consciousness("asleep")
     for i, t in enumerate(("move", "eat", "drink", "rest")):
         w.submit(Command(f"s{i}", pid, t, {"dir": "e"}))
         w.tick()
     assert reasons() == ["asleep"] * 4
-    p.state = "unconscious"
+    p.set_consciousness("unconscious")
     w.submit(Command("u", pid, "drink", {}))
     w.tick()
     assert reasons()[-1] == "unconscious"
-    p.state, p.wakefulness = "awake", 100.0
+    p.set_consciousness("awake")
+    p.wakefulness = 100.0
     for i, t in enumerate(("move", "eat", "drink")):
         p.stamina = 0.0                                    # 静止の回復があるので、毎回 0 にする
         w.submit(Command(f"x{i}", pid, t, {"dir": "e"}))
@@ -495,15 +508,15 @@ def test_npc_rests_when_low_stamina_and_safe_then_stops():
 def test_npc_rest_not_started_when_unsafe_and_ends_when_unsafe():
     w, r, a, _ = _setup("Rabbit")
     a.wakefulness = 80.0
-    a.in_combat = True
+    a.state["in_combat"] = True
     a.stamina = 10.0
     a.next_action_tick = 0
     r.tick_no = 1_000
     a.tick(r)
     assert not a.resting
-    a.in_combat = False
+    a.state["in_combat"] = False
     a.resting = True
-    a.in_combat = True
+    a.state["in_combat"] = True
     r.tick_no += 1
     a.tick(r)
     assert not a.resting                                    # 安全でなくなると休憩を終える
@@ -512,16 +525,19 @@ def test_npc_rest_not_started_when_unsafe_and_ends_when_unsafe():
 # --- シリアライズ(Region 越境) ---
 def test_state_roundtrips_through_to_dict_and_restore():
     w, r, a, _ = _setup("Fox")
-    a.state, a.resting, a.wakefulness, a.stamina = "sleeping", False, 42.5, 33.3
+    a.set_consciousness("asleep")
+    a.resting = False
+    a.wakefulness = 42.5
+    a.stamina = 33.3
     a.sleep_onset_history = [100, 200, 300]
     a.last_action_tick = 777
-    a.in_combat = True
+    a.state["in_combat"] = True
     d = a.to_state()
     for k in ("state", "wakefulness", "wakefulness_max", "stamina", "stamina_max", "mind", "strength", "max_health", "resting"):
         assert k in d
     b = factory.restore(d)
-    assert (b.state, b.wakefulness, b.stamina) == ("sleeping", 42.5, 33.3)
-    assert b.sleep_onset_history == [100, 200, 300] and b.last_action_tick == 777 and b.in_combat
+    assert (b.consciousness, b.wakefulness, b.stamina) == ("asleep", 42.5, 33.3)
+    assert b.sleep_onset_history == [100, 200, 300] and b.last_action_tick == 777 and b.state.get("in_combat")
     r.add(b, announce=False)                                # bind が覚醒度を上書きしない
     assert b.wakefulness == 42.5
 
@@ -533,7 +549,7 @@ def test_player_sleep_can_be_disabled():
     p = w.player_entity(pid)
     for _ in range(3_000):
         w.tick()
-    assert p.state == "awake" and p.wakefulness == pytest.approx(p.wakefulness_max * 1.0, rel=1) and not p.sleep_onset_history
+    assert p.consciousness == "awake" and p.wakefulness == pytest.approx(p.wakefulness_max * 1.0, rel=1) and not p.sleep_onset_history
     w2 = empty_world()
     pid2 = w2.add_player("p")
     p2 = w2.player_entity(pid2)
@@ -590,7 +606,7 @@ def test_rabbit_sleep_cycle_over_four_days():
     for t in range(total):
         w.tick()
         a.energy = a.hydration = 100.0                       # 食べ物・水は十分にある
-        asleep += a.state != "awake"
+        asleep += a.consciousness != "awake"
     mine = [e for e in w._events if e.get("id") == a.entity_id]       # 子ウサギの睡眠は数えない
     faints = sum(1 for e in mine if e["type"] == "fainted")
     onsets = sum(1 for e in mine if e["type"] == "fell_asleep")

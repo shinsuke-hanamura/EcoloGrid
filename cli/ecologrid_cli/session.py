@@ -36,6 +36,7 @@ class Session:
         self.view = WorldView()
         self.view.player_id = self.api.player_id
         self.view.tick_interval_ms = self.config.get("tick", {}).get("tick_interval_ms")
+        self.view.state_info = self.config.get("states", {})
         self._sync_state()
 
     def _sync_state(self) -> None:

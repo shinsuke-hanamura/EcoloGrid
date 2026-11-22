@@ -37,7 +37,7 @@ def test_effective_range_is_floor_of_range_times_wakefulness_ratio():
         a.wakefulness = a.wakefulness_max * ratio
         assert a.effective_range(r) == expected, ratio
     a.wakefulness = a.wakefulness_max
-    a.state = "sleeping"
+    a.set_consciousness("asleep")
     assert a.effective_range(r) == 0                   # 眠っている間は 0
 
 
@@ -300,7 +300,7 @@ def test_sleepy_npc_sees_less_and_sleeping_npc_perceives_nothing():
     r.tick_no += 10
     perceive(a, r)
     assert a.map.nearest_resource(("Grass",), pos.x, pos.y) is not None
-    a.state = "sleeping"
+    a.set_consciousness("asleep")
     before = a.map.version
     a.next_perception_tick = 0
     a.perceive_if_due(r)

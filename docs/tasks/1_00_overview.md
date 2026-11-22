@@ -25,6 +25,7 @@
 | 20 | x_20_rl_gate_stages.md | 強化学習の段階とゲート(測って判断) | plan のみ(ゲート 0 の後) |
 | issue 2 | 2_tick_speed_control.md | 進行速度(`tick_interval_ms`)の変更機能: プレイヤーが稼働中に変更・最速モード(0)・凡例の画面で表示(issue #2) | **実装済み**(2026-11-14。結果は plan の末尾) |
 | issue 4 | 4_side_panel.md | サイドパネル(Side Panel)の整理: ページの仕組みの統合・キー定義の一元化・見出し・高さ(↑↓ でスクロール)と幅(狭い端末は全面表示)の規則 | **実装済み**(2026-11-15。結果は plan の末尾) |
+| issue 6 | 6_state_stance_sleep.md | 状態(`state`)の dict 化と、体制(stance)・入眠のコントロール(入眠体制 `sleep_stance`: `sleep`・`cancel_sleep`。仮のホットキー `l`・`L`) | **実装済み**(2026-11-18。結果は plan の末尾) |
 | 12 | x_12_realtime_engine_spike.md | 処理の軽量化の追加策(縮小。基本部分は plan 13 で実装済み) | 縮小 |
 | 13 | 1_13_game_time_and_tick.md | tick 50 ms・時間の設定を tick 数に統一・移動速度・パラメータの tick 化・惑星と時計・植物の遅延評価・GC の制御 | **完了**(テスト 108 件。生態系のバランス崩れが判明: TODO G-2) |
 | 06 | x_06_phase2_persistence.md | Phase 2 永続化(Valkey) | 後回し |

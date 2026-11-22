@@ -142,12 +142,12 @@ def test_organize_happens_on_sleep_and_faint_only():
     a.fall_asleep(r)
     assert a.memory.organized == 1 and not a.memory.log                       # 入眠で整理され、ログは空
     assert any(k[0] == "drink" for k in a.memory.long) and any(k[0] == "sleep" for k in a.memory.long)
-    a.state = "awake"
+    a.set_consciousness("awake")
     a.remember(r, "drink", "drank")
     a._faint(r)
     assert a.memory.organized == 2 and not a.memory.log                       # 意識消失でも整理する
     b = a.memory.organized
-    a.state = "awake"; a.remember(r, "rest", "rested")
+    a.set_consciousness("awake"); a.remember(r, "rest", "rested")
     assert a.memory.organized == b and a.memory.log                           # 入眠しなければ整理されない
 
 

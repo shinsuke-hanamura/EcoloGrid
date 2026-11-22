@@ -94,6 +94,21 @@ def validate_config(cfg: WorldConfig) -> List[str]:
     return warnings
 
 
+def _validate_stances(sp) -> None:
+    """体制の係数(式)と、できる action の検査(core/state.py)。登録表にある体制の、<名前>_factors / <名前>_actions。"""
+    from .messages import COMMAND_TYPES
+    from .state import STATES, validate_factors
+    for name, d in STATES.items():
+        if d.kind != "stance":
+            continue
+        factors, actions = getattr(sp, f"{name}_factors", None), getattr(sp, f"{name}_actions", None)
+        if factors is not None:
+            validate_factors(f"{sp.key}.{name}_factors", dict(factors))
+        for act, ok in dict(actions or ()).items():
+            if (act != "*" and act not in COMMAND_TYPES) or not isinstance(ok, bool):
+                raise ValueError(f"{sp.key}.{name}_actions: {act!r}: {ok!r} (an action name and a bool are expected)")
+
+
 def _validate_sleep(sp, warnings: List[str]) -> None:
     """睡眠・スタミナ・気温のパラメータの検証(docs/spec/animal-states-spec.md §5.2・§6.9)。"""
     k = sp.key
@@ -109,6 +124,7 @@ def _validate_sleep(sp, warnings: List[str]) -> None:
         raise ValueError(f"{k}.sleep_standard_onset_tick must be within 0..sleep_cycle_ticks")
     if not 0 < sp.sleep_standard_duration_ticks < sp.sleep_cycle_ticks:
         raise ValueError(f"{k}.sleep_standard_duration_ticks must be within 1..sleep_cycle_ticks")
+    _validate_stances(sp)
     if sp.comfort_low_c > sp.comfort_high_c:
         raise ValueError(f"{k}: comfort_low_c must not exceed comfort_high_c")
     if sp.sleep_cycle_ticks % TICKS_PER_HOUR_FOR_DAY or sp.sleep_standard_onset_tick % TICKS_PER_HOUR_FOR_DAY:

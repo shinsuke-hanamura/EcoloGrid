@@ -72,6 +72,10 @@ class SpeciesDef:
     absorption_by_food: Tuple[Tuple[str, float], ...] = ()    # 食べ物の種ごとの上書き
     preference: float = 0.0               # 嗜好の既定値(好きなら正、嫌いなら負)。`ate` の reward になる
     preference_by_food: Tuple[Tuple[str, float], ...] = ()
+    # 体制の係数と、できる action(体制 sleep_stance。種の標準値を、個体の発生時に、個体の dict としてコピーする。
+    # 将来は遺伝子)。名前は <状態名>_factors / <状態名>_actions。仕様: docs/spec/animal-states-spec.md、core/state.py
+    sleep_stance_factors: Tuple[Tuple[str, str], ...] = (("wakefulness", "x * 0.2"),)     # パラメータ名 -> 式(x = 適用前の値)
+    sleep_stance_actions: Tuple[Tuple[str, bool], ...] = (("move", False), ("eat", False), ("drink", False))
     perception_range: int = 0           # 知覚の範囲(セル)。個体の発生時にコピー(将来は遺伝子)。有効な範囲 = これ × 覚醒度の割合
     perception_interval_ticks: int = 20  # 知覚して地図を更新する周期。個体の発生時にコピー
     thirst_threshold: float = 50.0

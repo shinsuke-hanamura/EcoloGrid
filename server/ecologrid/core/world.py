@@ -16,6 +16,7 @@ from .reproduction import default_scheduled_actions
 from .sleep import default_sleep_actions
 from .rng import make_rng, new_id
 from .species import SPECIES
+from .state import STATES
 from .terrain import Terrain
 
 
@@ -298,6 +299,8 @@ class World:
                     t == "entity_spawned" and ev["entity"].get("player_id") == pid):
                 out.append(ev)
                 continue
+            if t in ("state_entered", "state_left") and not STATES[ev["state"]].public:
+                continue                                     # 他のプレイヤーに見せない状態(体制・空腹など)の変化は、届けない
             if t == "entity_spawned":
                 ok = inside(ev["entity"].get("pos"))
             elif t == "entity_moved":
