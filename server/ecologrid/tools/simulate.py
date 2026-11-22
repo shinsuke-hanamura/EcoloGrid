@@ -17,7 +17,7 @@ def asleep_percent(w: World, species: str) -> str:
     ents = [e for r in w.regions.values() for e in r.entities_of(species)]
     if not ents:
         return "-"
-    return f"{100 * sum(e.state != 'awake' for e in ents) / len(ents):.0f}"
+    return f"{100 * sum(not e.state.get('awake') for e in ents) / len(ents):.0f}"
 
 
 def main() -> None:

@@ -34,6 +34,9 @@ KEYMAP: List[KeyDef] = [
     KeyDef(".", "command", ".", "wait", ("wait", {}), group="wait"),
     KeyDef(" ", "command", ".", "wait", ("wait", {}), group="wait", hidden=True),
     KeyDef("x", "command", "x", "respawn", ("respawn", {})),
+    # 入眠体制(仮のホットキー。呼び出し画面(Actions ページ)ができたら、そちらに移して、外す)
+    KeyDef("l", "command", "l", "sleep", ("sleep", {})),
+    KeyDef("L", "command", "L", "cancel_sleep", ("cancel_sleep", {}), short="cancel"),
     KeyDef("c", "panel", "c", "config", page="config"),
     KeyDef("t", "toggle", "t", "time/tick", short="time"),
     KeyDef("h", "panel", "h", "help", page="help"),

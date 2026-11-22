@@ -5,7 +5,17 @@ from typing import Deque, Dict, Iterable, List, Optional, Tuple
 XY = Tuple[int, int]
 
 # 描画の優先順位(セルに複数いるとき、先頭ほど優先)
-STATE_EVENTS = {"fell_asleep": "sleeping", "woke_up": "awake", "fainted": "unconscious"}
+STATE_EVENTS = {"fell_asleep": "asleep", "woke_up": "awake", "fainted": "unconscious"}        # 意識の状態の遷移(サーバのイベント)
+CONSCIOUSNESS = ("awake", "asleep", "unconscious")
+# 体制・状態の変化のメッセージ(サーバの state_entered / state_left)。asleep・unconscious は、fell_asleep・fainted がログに出る
+STATE_CHANGE_MESSAGES = {("sleep_stance", "entered"): "You get ready to sleep.",
+                         ("sleep_stance", "cancelled"): "You stop getting ready to sleep.",
+                         ("sleep_stance", "unsafe"): "You cannot stay ready to sleep here."}
+
+
+def with_consciousness(states, which: str) -> list:
+    """状態の名前の一覧の、意識の状態(awake・asleep・unconscious)を、which に差し替える。"""
+    return [which] + [n for n in states if n not in CONSCIOUSNESS]
 STATE_MESSAGES = {"fell_asleep": "You fell asleep.", "woke_up": "You woke up.", "fainted": "You fainted."}
 PRIORITY = ["Player", "Fox", "Rabbit", "Egg", "Wheat", "Grass", "Seed"]
 
@@ -51,7 +61,8 @@ class WorldView:
         self.me_id: Optional[str] = None
         self.alive = True
         self.stats = {"hydration": 0, "energy": 0, "health": 0}
-        self.vitals = {"stamina": 100, "wakefulness": 100, "state": "awake", "resting": False}   # スタミナ・覚醒度(%)・状態
+        self.vitals = {"stamina": 100, "wakefulness": 100, "state": ["awake"], "resting": False}   # スタミナ・覚醒度(%)・状態の名前の一覧(導いた状態を含む)
+        self.state_info: Dict[str, dict] = {}     # /config の states(状態・体制の登録表: kind・label・public・cancel_action)
         # PC の知覚の範囲だけを返す view を使うとき: 範囲(自分のセル + 距離 view_r)の地形。None = 全体(snapshot)
         self.view_r: Optional[int] = None
         self.win: Optional[Dict[XY, str]] = None
@@ -126,7 +137,7 @@ class WorldView:
         wmax = e.get("wakefulness_max") or 0
         self.vitals = {"stamina": int(e.get("stamina", 100)),
                        "wakefulness": int(100 * e["wakefulness"] / wmax) if wmax and e.get("wakefulness") is not None else 100,
-                       "state": e.get("state", "awake"), "resting": bool(e.get("resting", False))}
+                       "state": list(e.get("state", ["awake"])), "resting": bool(e.get("resting", False))}
 
     def temperature(self) -> Optional[float]:
         """自分の居る Region の気温(snapshot の値)。"""
@@ -224,7 +235,7 @@ class WorldView:
             elif t == "entity_moved":
                 if ev["id"] not in self.entities and self.win is not None:       # 知覚の範囲に新しく入ってきた個体
                     self._add({"id": ev["id"], "species": ev.get("species", "?"), "name": ev.get("species", "?"),
-                               "pos": ev["to"], "state": "awake"})
+                               "pos": ev["to"], "state": ["awake"]})
                 self._move(ev["id"], tuple(ev["to"]))
                 if ev["id"] == self.me_id:
                     self.window_dirty = True          # 自分が動いた → 範囲(窓)が動いたので、view を取り直す
@@ -243,16 +254,27 @@ class WorldView:
                     self.stats = {k: ev[k] for k in ("hydration", "energy", "health")}
                     self.vitals = {"stamina": ev.get("stamina", self.vitals["stamina"]),
                                    "wakefulness": ev.get("wakefulness_pct", self.vitals["wakefulness"]),
-                                   "state": ev.get("state", self.vitals["state"]),
+                                   "state": list(ev.get("state", self.vitals["state"])),
                                    "resting": ev.get("resting", self.vitals["resting"])}
             elif t in STATE_EVENTS:
                 e = self.entities.get(ev["id"])
                 if e is not None:
-                    e["state"] = STATE_EVENTS[t]
+                    e["state"] = with_consciousness(e.get("state", ["awake"]), STATE_EVENTS[t])
                     e["resting"] = False
                 if ev["id"] == self.me_id:
-                    self.vitals["state"] = STATE_EVENTS[t]
+                    self.vitals["state"] = with_consciousness(self.vitals["state"], STATE_EVENTS[t])
                     self.log.append(STATE_MESSAGES[t])
+            elif t in ("state_entered", "state_left"):          # 体制・状態(自分のものだけ届く。他の人には、公開のものだけ)
+                if ev["id"] == self.me_id:
+                    names = [n for n in self.vitals["state"] if n != ev["state"]]
+                    self.vitals["state"] = names + [ev["state"]] if t == "state_entered" else names
+                    kind = "entered" if t == "state_entered" else ev.get("reason", "")
+                    label = self.state_info.get(ev["state"], {}).get("label", ev["state"])
+                    msg = STATE_CHANGE_MESSAGES.get((ev["state"], kind))
+                    if msg is None and kind in ("entered", "cancelled", "unsafe"):
+                        msg = f"You enter: {label}." if kind == "entered" else f"You leave: {label}."
+                    if msg:
+                        self.log.append(msg)
             elif t in ("rest_started", "rest_ended"):
                 e = self.entities.get(ev["id"])
                 if e is not None:
@@ -266,11 +288,20 @@ class WorldView:
                     self.log.append("You died. Press x to respawn.")
             elif t == "command_rejected":
                 if ev.get("player_id") == self.player_id:
-                    self.log.append(f"Rejected: {ev.get('reason')}")
+                    self.log.append(self.rejected_text(ev.get("reason")))
         if tick is not None:
             self.tick = tick
         if game_time is not None:
             self.game_time = game_time
+
+    def rejected_text(self, reason) -> str:
+        """拒否の理由の表示。理由が、止めている状態の名前なら、表示名と、解除のキー(あれば)を添える。"""
+        info = self.state_info.get(reason)
+        if info is None:
+            return f"Rejected: {reason}"
+        from .keymap import HOTKEYS
+        key = next((k for k, c in HOTKEYS.items() if info.get("cancel_action") and c[0] == info["cancel_action"]), None)
+        return f"Rejected: blocked by {info.get('label', reason)}" + (f" (press {key} to cancel)" if key else "")
 
     def census(self) -> Dict[str, int]:
         """個体数(種ごと)。view(知覚の範囲だけ)のときは、範囲の中のものだけ数える。"""

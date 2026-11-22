@@ -30,7 +30,7 @@ def cell_glyph(view: WorldView, x: int, y: int) -> str:
                     if sp == "Player":
                         return (e.get("name") or "P")[:1]
                     g = GLYPH[sp]
-                    return g.upper() if e.get("state", "awake") != "awake" and g.isalpha() else g   # 眠っている動物は大文字
+                    return g.upper() if "awake" not in e.get("state", ["awake"]) and g.isalpha() else g   # 眠っている動物は大文字
     return TERRAIN.get(view.kind(x, y), "?")
 
 
@@ -43,6 +43,18 @@ FOOTERS = footer_variants()      # 最下行の候補(keymap.py の表から作�
 
 
 RESERVED_ROWS = 11          # 地図以外の行: 見出し 1 + 状態 2 + 人数 1 + Here 1 + ログ 4 + 死亡 1 + 最下行のキー 1
+
+
+def state_text(view: WorldView) -> str:
+    """状態の行(State)の表示。意識の状態(Unconscious・Sleeping)、休憩(Resting)、入っている体制の表示名(Ready to sleep)。"""
+    st = view.vitals["state"]
+    if "unconscious" in st:
+        return "Unconscious"
+    if "asleep" in st:
+        return "Sleeping"
+    parts = (["Resting"] if view.vitals["resting"] else []) + [
+        view.state_info.get(n, {}).get("label", n) for n in st if view.state_info.get(n, {}).get("kind") == "stance"]
+    return ", ".join(parts) if parts else "Awake"
 
 
 def render(view: WorldView, cols: int = 80, rows: int = 30, name: str = "",
@@ -76,8 +88,7 @@ def render(view: WorldView, cols: int = 80, rows: int = 30, name: str = "",
                  f"Energy {bar(st['energy'], bw)} {st['energy']:3d}   "
                  f"Health {bar(st['health'], bw)} {st['health']:3d}")
     vt = view.vitals
-    state = {"awake": "Resting" if vt["resting"] else "Awake", "sleeping": "Sleeping",
-             "unconscious": "Unconscious"}.get(vt["state"], vt["state"])
+    state = state_text(view)
     lines.append(f" Stamina   {bar(vt['stamina'], bw)} {vt['stamina']:3d}   "
                  f"Wakeful {bar(vt['wakefulness'], bw)} {vt['wakefulness']:3d}   State {state}"
                  + (f"   Range {view.view_r}" if view.view_r is not None else ""))

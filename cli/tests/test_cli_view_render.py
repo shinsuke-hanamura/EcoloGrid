@@ -84,7 +84,7 @@ def test_time_label_and_toggle():
     assert v.time_label() == "Day 4 06:00:00 (earth)"
     assert v.toggle_time_format() == "tick" and v.time_label() == "Tick 259,200"
     assert v.toggle_time_format() == "clock" and v.time_label() == "Day 4 06:00:00 (earth)"
-    out = render(v, cols=100, rows=24, name="n")
+    out = render(v, cols=130, rows=24, name="n")
     assert "Day 4 06:00:00 (earth)" in out.split("\n")[0] and "t:time/tick" in out
     v.toggle_time_format()
     assert "Tick 259,200" in render(v, cols=60, rows=24, name="n").split("\n")[0]
@@ -101,11 +101,11 @@ def test_vitals_state_events_and_status_bar():
     v.player_id, v.me_id = "pid", "me"
     v.load(_snap_with_temp([
         ent("me", "Player", 5, 5, hydration=80, energy=70, health=60, player_id="pid",
-            stamina=42.5, wakefulness=50.0, wakefulness_max=100.0, state="awake", resting=False),
-        ent("r1", "Rabbit", 6, 5, state="awake"), ent("f1", "Fox", 7, 5, state="sleeping")], temp=31.0))
-    assert v.vitals == {"stamina": 42, "wakefulness": 50, "state": "awake", "resting": False}
+            stamina=42.5, wakefulness=50.0, wakefulness_max=100.0, state=["awake"], resting=False),
+        ent("r1", "Rabbit", 6, 5, state=["awake"]), ent("f1", "Fox", 7, 5, state=["asleep"])], temp=31.0))
+    assert v.vitals == {"stamina": 42, "wakefulness": 50, "state": ["awake"], "resting": False}
     assert v.temperature() == 31.0
-    out = render(v, cols=80, rows=24)
+    out = render(v, cols=100, rows=24)
     assert "31C" in out.split("\n")[0]
     assert "Stamina" in out and "Wakeful" in out and "State Awake" in out
     assert "z:rest" in out
@@ -118,15 +118,15 @@ def test_vitals_state_events_and_status_bar():
     v.apply([{"type": "rest_started", "id": "me"}])
     assert v.vitals["resting"] and "State Resting" in render(v, cols=80, rows=24) and v.log[-1] == "You are resting."
     v.apply([{"type": "rest_ended", "id": "me"}, {"type": "fell_asleep", "id": "me"}])
-    assert v.vitals["state"] == "sleeping" and "State Sleeping" in render(v, cols=80, rows=24)
+    assert v.vitals["state"] == ["asleep"] and "State Sleeping" in render(v, cols=80, rows=24)
     v.apply([{"type": "fainted", "id": "me"}])
-    assert v.vitals["state"] == "unconscious" and v.log[-1] == "You fainted."
+    assert v.vitals["state"] == ["unconscious"] and v.log[-1] == "You fainted."
     v.apply([{"type": "woke_up", "id": "me"}])
-    assert v.vitals["state"] == "awake" and v.log[-1] == "You woke up."
+    assert v.vitals["state"] == ["awake"] and v.log[-1] == "You woke up."
     v.apply([{"type": "stats_changed", "player_id": "pid", "hydration": 9, "energy": 8, "health": 7,
-              "stamina": 6, "wakefulness_pct": 5, "state": "sleeping", "resting": False}])
+              "stamina": 6, "wakefulness_pct": 5, "state": ["asleep"], "resting": False}])
     assert v.stats == {"hydration": 9, "energy": 8, "health": 7}
-    assert v.vitals == {"stamina": 6, "wakefulness": 5, "state": "sleeping", "resting": False}
+    assert v.vitals == {"stamina": 6, "wakefulness": 5, "state": ["asleep"], "resting": False}
 
 
 def _view_payload(r, cx=10, cy=10, entities=(), tick=5):
@@ -136,7 +136,7 @@ def _view_payload(r, cx=10, cy=10, entities=(), tick=5):
             "origin": [cx - r, cy - r], "rows": rows, "entities": list(entities),
             "self": {"id": "me", "name": "me", "species": "Player", "pos": [cx, cy], "player_id": "pid",
                      "hydration": 50, "energy": 50, "health": 50, "stamina": 50, "wakefulness": 50.0,
-                     "wakefulness_max": 100.0, "state": "awake", "resting": False}}
+                     "wakefulness_max": 100.0, "state": ["awake"], "resting": False}}
 
 
 def test_load_view_keeps_only_the_window_and_renders_only_it():
@@ -334,3 +334,68 @@ def test_map_keeps_the_player_cell_at_the_center_and_odd_size():
             assert len(row) == 1
             map_w = (cols // 2) if (cols // 2) % 2 else (cols // 2) - 1      # 地図の幅(セル)は奇数で、幅を超えない
             assert row[0].index("Z") // 2 == map_w // 2          # 中央のセル
+
+
+# --- 状態(state)の一覧・入眠体制(issue 6) ---
+_INFO = {"sleep_stance": {"kind": "stance", "label": "Ready to sleep", "public": False, "derived": False,
+                          "enter_action": "sleep", "cancel_action": "cancel_sleep"},
+         "asleep": {"kind": "condition", "label": "Asleep", "public": True, "derived": False,
+                    "enter_action": "", "cancel_action": ""}}
+
+
+def _state_view():
+    v = WorldView()
+    v.player_id, v.me_id, v.my_name = "pid", "me", "Zed"
+    v.load(snap([ent("me", "Player", 10, 10, hydration=50, energy=50, health=50, player_id="pid", state=["awake"])],
+                ["." * 32 for _ in range(32)]))
+    v.state_info = dict(_INFO)
+    return v
+
+
+def test_status_line_shows_the_stance_label_and_consciousness():
+    v = _state_view()
+    assert "State Awake" in render(v, cols=100, rows=30)
+    v.vitals["state"] = ["sleep_stance", "awake", "hungry"]
+    assert "State Ready to sleep" in render(v, cols=100, rows=30)
+    v.vitals["resting"] = True
+    assert "State Resting, Ready to sleep" in render(v, cols=100, rows=30)
+    v.vitals["state"], v.vitals["resting"] = ["asleep"], False
+    assert "State Sleeping" in render(v, cols=100, rows=30)
+    v.vitals["state"] = ["unconscious"]
+    assert "State Unconscious" in render(v, cols=100, rows=30)
+
+
+def test_state_events_update_the_list_and_the_log():
+    v = _state_view()
+    v.apply([{"type": "state_entered", "id": "me", "state": "sleep_stance", "kind": "stance", "reason": "entered"}])
+    assert v.vitals["state"] == ["awake", "sleep_stance"] and v.log[-1] == "You get ready to sleep."
+    v.apply([{"type": "state_entered", "id": "me", "state": "sleep_stance", "kind": "stance", "reason": "entered"}])
+    assert v.vitals["state"].count("sleep_stance") == 1                      # 重複しない
+    v.apply([{"type": "state_left", "id": "me", "state": "sleep_stance", "kind": "stance", "reason": "cancelled"}])
+    assert v.vitals["state"] == ["awake"] and v.log[-1] == "You stop getting ready to sleep."
+    n = len(v.log)
+    v.apply([{"type": "state_entered", "id": "me", "state": "sleep_stance", "kind": "stance", "reason": "entered"},
+             {"type": "state_left", "id": "me", "state": "sleep_stance", "kind": "stance", "reason": "asleep"},
+             {"type": "fell_asleep", "id": "me"}])
+    assert v.vitals["state"] == ["asleep"] and list(v.log)[-1] == "You fell asleep."
+    assert "You stop getting ready to sleep." not in list(v.log)[n:]           # 眠ったときは、fell_asleep のログだけ
+    v.apply([{"type": "state_entered", "id": "other", "state": "sleep_stance", "kind": "stance", "reason": "entered"}])
+    assert v.vitals["state"] == ["asleep"]                                     # 他の個体のものは、自分の状態に入らない
+
+
+def test_rejected_text_names_the_blocking_state_and_the_cancel_key():
+    v = _state_view()
+    assert v.rejected_text("sleep_stance") == "Rejected: blocked by Ready to sleep (press L to cancel)"
+    assert v.rejected_text("asleep") == "Rejected: blocked by Asleep"            # 解除の action がない状態: キーは添えない
+    assert v.rejected_text("no_prey") == "Rejected: no_prey"
+    v.apply([{"type": "command_rejected", "player_id": "pid", "reason": "sleep_stance"}])
+    assert v.log[-1].startswith("Rejected: blocked by Ready to sleep")
+
+
+def test_other_entities_state_list_decides_the_uppercase_glyph():
+    from ecologrid_cli.render import cell_glyph
+    v = WorldView()
+    v.player_id, v.me_id = "pid", "me"
+    v.load(snap([ent("me", "Player", 5, 5, hydration=1, energy=1, health=1, player_id="pid"),
+                 ent("f1", "Fox", 6, 5, state=["asleep"]), ent("f2", "Fox", 7, 5, state=["awake"])], ["." * 32 for _ in range(32)]))
+    assert cell_glyph(v, 6, 5) == "F" and cell_glyph(v, 7, 5) == "f"

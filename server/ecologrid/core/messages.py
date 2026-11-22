@@ -7,8 +7,8 @@ from typing import Any, Dict
 class Command:
     command_id: str            # クライアント生成の UUID。同じ ID は 1 度しか処理しない
     player_id: str
-    type: str                  # move / eat / drink / rest / wait / respawn
+    type: str                  # move / eat / drink / rest / wait / sleep / cancel_sleep / respawn
     args: Dict[str, Any] = field(default_factory=dict)
 
 
-COMMAND_TYPES = ("move", "eat", "drink", "rest", "wait", "respawn")
+COMMAND_TYPES = ("move", "eat", "drink", "rest", "wait", "sleep", "cancel_sleep", "respawn")

@@ -61,7 +61,7 @@ def test_view_contains_only_entities_inside_range_with_public_fields():
         for e in v["entities"]:
             assert set(e) <= {"id", "name", "species", "pos", "state", "player_id"}      # 内部状態(水分・記憶など)は含めない
             assert max(abs(e["pos"][0] - v["center"][0]), abs(e["pos"][1] - v["center"][1])) <= 10
-        assert [e for e in v["entities"] if e["id"] == near.entity_id][0]["state"] == "awake"
+        assert [e for e in v["entities"] if e["id"] == near.entity_id][0]["state"] == ["awake"]
 
 
 def test_range_zero_shows_only_own_cell():
@@ -72,7 +72,7 @@ def test_range_zero_shows_only_own_cell():
         v = c.get(f"{P}/players/{pid}/view", headers=h).json()
         assert v["r"] == 0 and len(v["rows"]) == 1 and len(v["rows"][0]) == 1       # 自分のセルだけ
         assert all(e["pos"] == list(ent.grid_position) for e in v["entities"])
-        ent.state = "sleeping"
+        ent.set_consciousness("asleep")
         v = c.get(f"{P}/players/{pid}/view", headers=h).json()
         assert v["r"] == 0 and len(v["rows"]) == 1                                     # 眠っている間も、自分のセルだけ
 

@@ -15,6 +15,7 @@ from ecologrid.core.grid import DIRS
 from ecologrid.core.messages import COMMAND_TYPES, Command
 from ecologrid.core.planets import PLANETS
 from ecologrid.core.species import SPECIES
+from ecologrid.core.state import STATES
 from ecologrid.core.terrain import LAND, ROCK, WATER
 from ecologrid.core.world import EventsExpired
 
@@ -87,8 +88,11 @@ async def system_config(game: GameServer = Depends(get_game)):
                            "temperature_c": p.temperature_c,
                            "temperature_amplitude_c": p.temperature_amplitude_c}
                     for p in PLANETS.values()},
-        "species": {k: {f: getattr(sp, f) for f in schemas.SpeciesInfo.model_fields}
+        "species": {k: {f: (dict(v) if isinstance(v, tuple) and f.endswith(("_factors", "_actions")) else v)
+                        for f, v in ((f, getattr(sp, f)) for f in schemas.SpeciesInfo.model_fields)}
                     for k, sp in SPECIES.items()},
+        "states": {n: {"kind": d.kind, "label": d.label, "public": d.public, "derived": d.derive is not None,
+                       "enter_action": d.enter_action, "cancel_action": d.cancel_action} for n, d in STATES.items()},
         "world": {"seed": cfg.seed, "width": cfg.width, "height": cfg.height,
                   "region_size": cfg.region_size, "regions_x": cfg.regions_x, "regions_y": cfg.regions_y},
         "limits": {"max_players": st.max_players, "name_max_length": schemas.NAME_MAX_LEN,

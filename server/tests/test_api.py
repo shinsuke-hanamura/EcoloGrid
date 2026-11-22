@@ -265,13 +265,13 @@ def test_player_entity_has_state_fields_and_rest_command():
         ent = c.get(f"{P}/players/{pid}", headers=h).json()["entity"]
         for k in ("state", "resting", "wakefulness", "wakefulness_max", "stamina", "stamina_max", "mind", "strength", "max_health"):
             assert k in ent, k
-        assert ent["state"] == "awake" and ent["stamina_max"] == ent["health"]
+        assert "awake" in ent["state"] and ent["stamina_max"] == ent["health"]
         r = c.post(f"{P}/players/{pid}/commands", headers=h, json={"command_id": "r1", "type": "rest"})
         assert r.status_code == 202, r.text
         game.step()
         ev = c.get(f"{P}/players/{pid}/events", headers=h, params={"since": 0}).json()["events"]     # 自分に関するイベント
         assert any(e["type"] == "rest_started" for e in ev)
-        assert any(e["type"] == "stats_changed" and e.get("state") == "awake" and e.get("resting") is True
+        assert any(e["type"] == "stats_changed" and "awake" in e.get("state", []) and e.get("resting") is True
                    and "stamina" in e and "wakefulness_pct" in e for e in ev) or True
         snap = c.get(f"{P}/world/snapshot", headers=ADM).json()
         assert all(r["temperature_c"] == 20.0 for r in snap["regions"])
@@ -282,7 +282,7 @@ def test_player_command_rejected_while_asleep_via_api():
     with make() as c:
         pid, h = join(c)
         game = c.app.state.game
-        game.world.player_entity(pid).state = "sleeping"
+        game.world.player_entity(pid).set_consciousness("asleep")
         c.post(f"{P}/players/{pid}/commands", headers=h, json={"command_id": "m1", "type": "move", "args": {"dir": "e"}})
         game.step()
         ev = c.get(f"{P}/players/{pid}/events", headers=h, params={"since": 0}).json()["events"]

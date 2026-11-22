@@ -45,7 +45,7 @@ class Bot:
             return ("respawn", {})
         me, st = v.me_pos, v.stats
         vt = v.vitals
-        if vt["state"] != "awake":
+        if "awake" not in vt["state"]:
             return None                       # 眠っている間はコマンドが拒否される
         if vt["resting"] and vt["stamina"] < 95 and st["hydration"] >= 50 and st["energy"] >= 60:
             return None                       # 休憩を続ける(移動などの別のコマンドで終える)

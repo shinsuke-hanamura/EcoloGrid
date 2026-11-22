@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-CommandType = Literal["move", "eat", "drink", "rest", "wait", "respawn"]
+CommandType = Literal["move", "eat", "drink", "rest", "wait", "sleep", "cancel_sleep", "respawn"]
 NAME_MAX_LEN = 24
 
 
@@ -148,6 +148,17 @@ class SpeciesInfo(BaseModel):
     perception_interval_ticks: int = Field(description="知覚して地図を更新する周期(tick)の標準値")
     absorption: float = Field(description="食べ物に共通の吸収性の既定値(0〜1)。得る Energy = 獲物の Energy × 吸収性")
     preference: float = Field(description="嗜好の既定値。`ate` の reward になる")
+    sleep_stance_factors: Dict[str, str] = Field(description="入眠体制の間、パラメータに適用する式(例: {\"wakefulness\": \"x * 0.2\"}。x = 適用前の値)の標準値")
+    sleep_stance_actions: Dict[str, bool] = Field(description="入眠体制の間の、できる・できない action(False = できない。書かれていないものは、できる)の標準値")
+
+
+class StateInfo(BaseModel):
+    kind: str = Field(description="`stance`(体制。本人の action で入り、cancel_<action> で解除する)/ `condition`(状態)")
+    label: str = Field(description="表示名")
+    public: bool = Field(description="他のプレイヤーに見せるか(描画に使う asleep・unconscious・awake など)")
+    derived: bool = Field(description="true: 値から導く状態(保存せず、書き込めない)")
+    enter_action: str = Field("", description="体制: 入る action")
+    cancel_action: str = Field("", description="体制: 解除する action(= cancel_ + enter_action)")
 
 
 class LimitsInfo(BaseModel):
@@ -170,6 +181,7 @@ class SystemConfig(BaseModel):
     time_units: TimeUnits
     planets: Dict[str, PlanetInfo]
     species: Dict[str, SpeciesInfo]
+    states: Dict[str, StateInfo] = Field(description="状態・体制の登録表(名前 → 種類・表示名・公開するか・体制の action)。登録表の順")
     world: WorldConfigInfo
     limits: LimitsInfo
     command_types: List[str]
